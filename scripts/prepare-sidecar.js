@@ -1,89 +1,177 @@
 #!/usr/bin/env node
 /**
- * Copies the locally-installed kei binary into src-tauri/binaries/ with the
- * target-triple suffix that Tauri requires for sidecar bundling.
+ * Downloads the latest kei release from GitHub and places it in
+ * src-tauri/binaries/ with the target-triple suffix Tauri requires.
  *
- * Works on macOS, Linux, and Windows.
+ * Works on macOS, Linux, and Windows (no extra npm packages needed).
  *
- * Run once before `npm run build` (or `npm run dev`):
- *   node scripts/prepare-sidecar.js
- *
- * The resulting file is gitignored — re-run whenever you update kei.
+ *   node scripts/prepare-sidecar.js          # always fetches latest
+ *   node scripts/prepare-sidecar.js --force  # re-download even if current
  */
 
+const https = require("https");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const { execSync } = require("child_process");
 
+const REPO = "rhoopr/kei";
+const BIN_DIR = path.join(__dirname, "..", "src-tauri", "binaries");
 const isWindows = process.platform === "win32";
-const binName = isWindows ? "kei.exe" : "kei";
+const force = process.argv.includes("--force");
 
-// ── Locate the kei binary ────────────────────────────────────────────────────
+// ── Map Rust target triple → GitHub asset name ───────────────────────────────
 
-function findKei() {
-  if (process.env.KEI_BIN && fs.existsSync(process.env.KEI_BIN)) {
-    return process.env.KEI_BIN;
+function assetForTriple(triple) {
+  // triple examples: aarch64-apple-darwin, x86_64-unknown-linux-gnu,
+  //                  x86_64-pc-windows-msvc
+  if (triple.includes("apple-darwin")) {
+    const arch = triple.startsWith("aarch64") ? "aarch64" : "x86_64";
+    return { name: `kei-macos-${arch}.tar.gz`, ext: "tar.gz" };
   }
-
-  const home = process.env.HOME || process.env.USERPROFILE || "";
-  const candidates = isWindows
-    ? [path.join(home, ".cargo", "bin", "kei.exe")]
-    : [
-        path.join(home, ".cargo", "bin", "kei"),
-        "/usr/local/bin/kei",
-        "/opt/homebrew/bin/kei",
-        "/usr/bin/kei",
-      ];
-
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
+  if (triple.includes("windows")) {
+    return { name: "kei-windows-x86_64.zip", ext: "zip" };
   }
-
-  // Try PATH
-  try {
-    const cmd = isWindows ? "where kei" : "which kei";
-    const result = execSync(cmd, { encoding: "utf8" }).trim().split("\n")[0].trim();
-    if (result && fs.existsSync(result)) return result;
-  } catch {
-    // not on PATH
-  }
-
-  return null;
+  // Linux
+  const arch = triple.startsWith("aarch64") ? "aarch64" : "x86_64";
+  return { name: `kei-linux-${arch}.tar.gz`, ext: "tar.gz" };
 }
 
-// ── Determine Rust target triple ─────────────────────────────────────────────
+// ── Target triple from rustc ──────────────────────────────────────────────────
 
 function getTargetTriple() {
   try {
-    const output = execSync("rustc -vV", { encoding: "utf8" });
-    const match = output.match(/^host:\s+(.+)$/m);
-    if (match) return match[1].trim();
+    const out = execSync("rustc -vV", { encoding: "utf8" });
+    const m = out.match(/^host:\s+(.+)$/m);
+    if (m) return m[1].trim();
   } catch {
-    // rustc not found
+    // fall through
   }
   throw new Error("rustc not found — install Rust from https://rustup.rs");
 }
 
+// ── GitHub API ────────────────────────────────────────────────────────────────
+
+function fetchJson(url) {
+  return new Promise((resolve, reject) => {
+    const opts = new URL(url);
+    opts.headers = { "User-Agent": "kei-photosync-prepare-script" };
+    https.get(opts, (res) => {
+      if (res.statusCode === 302 || res.statusCode === 301) {
+        return fetchJson(res.headers.location).then(resolve).catch(reject);
+      }
+      let body = "";
+      res.on("data", (c) => (body += c));
+      res.on("end", () => {
+        try { resolve(JSON.parse(body)); }
+        catch (e) { reject(new Error(`JSON parse error: ${e.message}`)); }
+      });
+    }).on("error", reject);
+  });
+}
+
+// ── Download file (follows redirects) ────────────────────────────────────────
+
+function download(url, dest) {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(dest);
+    function get(u) {
+      https.get(u, { headers: { "User-Agent": "kei-photosync-prepare-script" } }, (res) => {
+        if (res.statusCode === 302 || res.statusCode === 301) {
+          return get(res.headers.location);
+        }
+        if (res.statusCode !== 200) {
+          return reject(new Error(`HTTP ${res.statusCode} for ${u}`));
+        }
+        const total = parseInt(res.headers["content-length"] || "0", 10);
+        let received = 0;
+        res.on("data", (chunk) => {
+          received += chunk.length;
+          if (total) {
+            const pct = Math.round((received / total) * 100);
+            process.stdout.write(`\r  Downloading… ${pct}%`);
+          }
+        });
+        res.pipe(file);
+        file.on("finish", () => { process.stdout.write("\n"); file.close(resolve); });
+      }).on("error", reject);
+    }
+    get(url);
+  });
+}
+
+// ── Extract archive → single `kei[.exe]` binary ───────────────────────────────
+
+function extract(archivePath, ext, outDir) {
+  if (ext === "tar.gz") {
+    execSync(`tar -xzf "${archivePath}" -C "${outDir}"`, { stdio: "inherit" });
+  } else {
+    // .zip
+    if (isWindows) {
+      // tar ≥ Windows 10 build 17063 supports zip
+      execSync(`tar -xf "${archivePath}" -C "${outDir}"`, { stdio: "inherit" });
+    } else {
+      execSync(`unzip -o "${archivePath}" -d "${outDir}"`, { stdio: "inherit" });
+    }
+  }
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 
-const keiPath = findKei();
-if (!keiPath) {
-  console.error("Error: kei not found. Install it with: cargo install kei");
+(async () => {
+  const triple = getTargetTriple();
+  const { name: assetName, ext } = assetForTriple(triple);
+  const destBin = isWindows ? `kei-${triple}.exe` : `kei-${triple}`;
+  const destPath = path.join(BIN_DIR, destBin);
+
+  // Check if already up-to-date (unless --force)
+  if (!force && fs.existsSync(destPath)) {
+    console.log(`Sidecar already present: ${destPath}`);
+    console.log("Run with --force to re-download.");
+    return;
+  }
+
+  console.log(`Target triple: ${triple}`);
+  console.log(`Fetching latest release from github.com/${REPO}…`);
+
+  const release = await fetchJson(`https://api.github.com/repos/${REPO}/releases/latest`);
+  const tag = release.tag_name;
+  const asset = (release.assets || []).find((a) => a.name === assetName);
+
+  if (!asset) {
+    console.error(`No asset named "${assetName}" found in release ${tag}.`);
+    console.error("Available assets:", (release.assets || []).map((a) => a.name).join(", "));
+    process.exit(1);
+  }
+
+  console.log(`Release: ${tag}  |  Asset: ${assetName}`);
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "kei-sidecar-"));
+  const archivePath = path.join(tmpDir, assetName);
+
+  try {
+    await download(asset.browser_download_url, archivePath);
+
+    console.log("  Extracting…");
+    extract(archivePath, ext, tmpDir);
+
+    // Find the extracted binary (kei or kei.exe)
+    const extractedBin = path.join(tmpDir, isWindows ? "kei.exe" : "kei");
+    if (!fs.existsSync(extractedBin)) {
+      throw new Error(`Expected binary not found after extraction: ${extractedBin}`);
+    }
+
+    fs.mkdirSync(BIN_DIR, { recursive: true });
+    fs.copyFileSync(extractedBin, destPath);
+    if (!isWindows) fs.chmodSync(destPath, 0o755);
+
+    console.log(`Installed: ${destPath}`);
+    console.log(`Done — you can now run 'npm run dev' or 'npm run build'.`);
+  } finally {
+    // Clean up temp files
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+})().catch((err) => {
+  console.error("Error:", err.message);
   process.exit(1);
-}
-console.log(`Found kei at: ${keiPath}`);
-
-const triple = getTargetTriple();
-console.log(`Target triple: ${triple}`);
-
-const destDir = path.join(__dirname, "..", "src-tauri", "binaries");
-fs.mkdirSync(destDir, { recursive: true });
-
-const destName = isWindows ? `kei-${triple}.exe` : `kei-${triple}`;
-const destPath = path.join(destDir, destName);
-
-fs.copyFileSync(keiPath, destPath);
-if (!isWindows) fs.chmodSync(destPath, 0o755);
-
-console.log(`Copied to: ${destPath}`);
-console.log("Done — you can now run 'npm run dev' or 'npm run build'.");
+});

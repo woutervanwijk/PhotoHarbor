@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "identifier": "com.kei.photosync",
   "build": {
-    "beforeDevCommand": "npm run vite:dev",
-    "beforeBuildCommand": "npm run vite:build",
+    "beforeDevCommand": "npm run prepare-sidecar && npm run vite:dev",
+    "beforeBuildCommand": "npm run prepare-sidecar && npm run vite:build",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },

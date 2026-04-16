@@ -21,13 +21,15 @@ The kei binary is bundled inside the app — end users do not need to install it
 - On macOS: Xcode Command Line Tools (`xcode-select --install`)
 - On Linux: `libwebkit2gtk`, `libgtk-3`, `libayatana-appindicator3` (see [Tauri Linux dependencies](https://tauri.app/start/prerequisites/#linux))
 
+kei itself is downloaded automatically by `npm run prepare-sidecar` — no separate installation needed.
+
 ## Quick start
 
 ```bash
 # Install JS dependencies
 npm install
 
-# Copy the kei binary into the sidecar slot (required once, and after kei updates)
+# Download the latest kei release from GitHub into src-tauri/binaries/
 npm run prepare-sidecar
 
 # Launch in development mode
@@ -36,8 +38,11 @@ npm run dev
 
 The first build takes a few minutes (Tauri compiles the WebView bindings). Subsequent runs are fast.
 
-> **Note:** If you don't have kei installed yet, install it with `cargo install kei`,
-> then run `npm run prepare-sidecar`.
+`prepare-sidecar` is a no-op if the binary is already present. Pass `--force` to re-download (e.g. after a kei update):
+
+```bash
+npm run prepare-sidecar -- --force
+```
 
 ## Building for distribution
 

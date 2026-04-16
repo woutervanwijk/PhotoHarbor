@@ -11,7 +11,11 @@
       "Bash(wait)",
       "Bash(npm run *)",
       "Bash(sqlite3 ~/.config/kei/cookies/woutervanwijkgmailcom.db \".tables\")",
-      "Bash(chmod +x \"/Users/wouter/code/Kei PhotoSync/scripts/prepare-sidecar.sh\")"
+      "Bash(chmod +x \"/Users/wouter/code/Kei PhotoSync/scripts/prepare-sidecar.sh\")",
+      "Bash(node scripts/prepare-sidecar.js)",
+      "Bash(curl -s \"https://api.github.com/repos/rhoopr/kei/releases/latest\")",
+      "Bash(python3 -c \"import json,sys; r=json.load\\(sys.stdin\\); print\\(r.get\\('tag_name',''\\)\\); [print\\(a['name'], a['browser_download_url']\\) for a in r.get\\('assets',[]\\)]\")",
+      "Bash(node scripts/prepare-sidecar.js --force)"
     ]
   }
 }
