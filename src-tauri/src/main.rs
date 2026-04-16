@@ -90,17 +90,32 @@ pub struct AppState {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Returns the kei config directory (~/.config/kei on Linux/macOS,
+/// %APPDATA%\kei on Windows).
+fn kei_config_dir() -> Result<std::path::PathBuf, String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var("APPDATA")
+            .map(|p| std::path::PathBuf::from(p).join("kei"))
+            .map_err(|_| "APPDATA not set".to_string())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::env::var("HOME")
+            .map(|p| std::path::PathBuf::from(p).join(".config/kei"))
+            .map_err(|_| "HOME not set".to_string())
+    }
+}
+
 fn config_path() -> Result<std::path::PathBuf, String> {
-    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
-    Ok(std::path::PathBuf::from(home).join(".config/kei/config.toml"))
+    Ok(kei_config_dir()?.join("config.toml"))
 }
 
 /// Locate the SQLite database for a given username.
 /// kei stores databases in ~/.config/kei/cookies/<sanitised_username>.db
 /// where sanitisation strips all non-alphanumeric characters (except '-').
 fn db_path(username: &str) -> Result<std::path::PathBuf, String> {
-    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
-    let base = std::path::PathBuf::from(home).join(".config/kei");
+    let base = kei_config_dir()?;
     let cookies_dir = base.join("cookies");
 
     // kei strips non-alphanumeric chars (except '-') from the username.
@@ -414,37 +429,84 @@ async fn submit_2fa(code: String) -> Result<(), String> {
 }
 
 /// Resolve the kei binary path.
+/// Resolution order:
+///   1. Bundled sidecar (next to the app executable — always present in a
+///      packaged build)
+///   2. $KEI_BIN env override (useful during development)
+///   3. Common cargo / Homebrew / system install locations
+///   4. PATH via `which` (Unix) / `where` (Windows)
 fn which_kei() -> Result<String, String> {
-    // 1. $KEI_BIN env override
-    if let Ok(v) = std::env::var("KEI_BIN") {
-        return Ok(v);
+    // The binary is named "kei" on Unix and "kei.exe" on Windows.
+    #[cfg(target_os = "windows")]
+    let bin_name = "kei.exe";
+    #[cfg(not(target_os = "windows"))]
+    let bin_name = "kei";
+
+    // 1. Bundled sidecar — Tauri places externalBin entries alongside the
+    //    main executable in both packaged apps and `tauri dev` mode.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let sidecar = dir.join(bin_name);
+            if sidecar.exists() {
+                return Ok(sidecar.to_string_lossy().to_string());
+            }
+        }
     }
 
-    // 2. Common install locations (rustup / Homebrew / /usr/local/bin)
-    let home = std::env::var("HOME").unwrap_or_default();
-    let candidates = [
+    // 2. $KEI_BIN env override
+    if let Ok(v) = std::env::var("KEI_BIN") {
+        if std::path::Path::new(&v).exists() {
+            return Ok(v);
+        }
+    }
+
+    // 3. Common install locations
+    // HOME on Unix; USERPROFILE on Windows (cargo installs there)
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default();
+
+    #[cfg(target_os = "windows")]
+    let candidates: &[String] = &[
+        format!("{home}\\.cargo\\bin\\kei.exe"),
+    ];
+    #[cfg(not(target_os = "windows"))]
+    let candidates: &[String] = &[
         format!("{home}/.cargo/bin/kei"),
         "/usr/local/bin/kei".to_string(),
         "/opt/homebrew/bin/kei".to_string(),
         "/usr/bin/kei".to_string(),
     ];
-
-    for c in &candidates {
-        if std::path::Path::new(c).exists() {
+    for c in candidates {
+        if std::path::Path::new(c.as_str()).exists() {
             return Ok(c.clone());
         }
     }
 
-    // 3. Try PATH via `which`
-    let out = std::process::Command::new("which")
+    // 4. PATH lookup: `which` on Unix, `where` on Windows
+    #[cfg(target_os = "windows")]
+    let lookup_cmd = "where";
+    #[cfg(not(target_os = "windows"))]
+    let lookup_cmd = "which";
+
+    let out = std::process::Command::new(lookup_cmd)
         .arg("kei")
         .output()
         .ok()
         .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+        .and_then(|o| {
+            // `where` on Windows may return multiple lines; take the first.
+            let s = String::from_utf8_lossy(&o.stdout);
+            s.lines().next().map(|l| l.trim().to_string())
+        });
 
     out.filter(|s| !s.is_empty())
-        .ok_or_else(|| "kei binary not found. Install it with `cargo install kei` or set KEI_BIN.".to_string())
+        .ok_or_else(|| "kei binary not found".to_string())
+}
+
+#[tauri::command]
+async fn check_kei() -> Result<String, String> {
+    which_kei()
 }
 
 // ---------------------------------------------------------------------------
@@ -457,6 +519,7 @@ fn main() {
             sync_child: Arc::new(Mutex::new(None)),
         })
         .invoke_handler(tauri::generate_handler![
+            check_kei,
             get_config,
             save_config,
             get_status,

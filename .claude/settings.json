@@ -10,7 +10,8 @@
       "Bash(python3 -c ' *)",
       "Bash(wait)",
       "Bash(npm run *)",
-      "Bash(sqlite3 ~/.config/kei/cookies/woutervanwijkgmailcom.db \".tables\")"
+      "Bash(sqlite3 ~/.config/kei/cookies/woutervanwijkgmailcom.db \".tables\")",
+      "Bash(chmod +x \"/Users/wouter/code/Kei PhotoSync/scripts/prepare-sidecar.sh\")"
     ]
   }
 }

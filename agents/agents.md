@@ -4,7 +4,9 @@ This document gives an AI agent the context needed to work in this repo confiden
 
 ## What this project is
 
-A Tauri v2 macOS GUI that wraps the [kei](https://github.com/rhoopr/kei) iCloud photo sync CLI. The GUI does not contain any sync logic — it spawns the kei binary, streams its output, and reads/writes its config and SQLite database.
+A Tauri v2 cross-platform desktop GUI that wraps the [kei](https://github.com/rhoopr/kei) iCloud photo sync CLI. The GUI does not contain any sync logic — it spawns the kei binary, streams its output, and reads/writes its config and SQLite database.
+
+**Supported platforms:** macOS (primary), Windows 10+, Linux.
 
 **Rule:** never modify kei's source or vendor it. All behaviour changes go through the GUI layer or by passing CLI flags to the kei binary.
 
@@ -12,13 +14,14 @@ A Tauri v2 macOS GUI that wraps the [kei](https://github.com/rhoopr/kei) iCloud 
 
 | Layer | Technology |
 |---|---|
-| Desktop shell | [Tauri 2](https://tauri.app) (Rust backend + WKWebView frontend) |
-| Frontend | Vanilla HTML/CSS/JS — no bundler, no framework |
+| Desktop shell | [Tauri 2](https://tauri.app) (Rust backend + WebView frontend) |
+| Frontend | Vanilla HTML/CSS/JS, bundled by Vite |
 | Backend | Rust, async via Tokio |
 | Config I/O | `toml` crate + `serde` |
 | Database | `rusqlite` (bundled SQLite, sync queries run via `spawn_blocking`) |
 | Process mgmt | `tokio::process::Command` |
 | JS ↔ Rust | `@tauri-apps/api` v2 (`invoke` for commands, `listen` for events) |
+| Bundled binary | kei is shipped as a Tauri sidecar (`externalBin`) |
 
 ## Key files
 
@@ -26,14 +29,17 @@ A Tauri v2 macOS GUI that wraps the [kei](https://github.com/rhoopr/kei) iCloud 
 |---|---|
 | `src-tauri/src/main.rs` | All Tauri commands and application state |
 | `src/app.js` | Frontend logic: routing, invoke calls, event listeners |
-| `src/styles.css` | macOS-native styling (CSS variables, dark mode via `prefers-color-scheme`) |
+| `src/log-parsers.js` | Extensible log parser/renderer registry |
+| `src/styles.css` | Native-style theming (CSS variables, dark mode via `prefers-color-scheme`) |
 | `index.html` | App shell with sidebar navigation and view containers |
-| `src-tauri/tauri.conf.json` | Window config, bundle settings, `frontendDist` |
+| `src-tauri/tauri.conf.json` | Window config, bundle settings, sidecar declaration |
 | `src-tauri/capabilities/default.json` | Tauri v2 permission grants |
+| `scripts/prepare-sidecar.js` | Copies the local kei binary into `src-tauri/binaries/` for bundling |
 
 ## Backend commands (src-tauri/src/main.rs)
 
 ```
+check_kei()                -> String (resolved binary path)
 get_config()               -> KeiConfig
 save_config(config)        -> ()
 get_status()               -> SyncStatus    // reads SQLite
@@ -73,15 +79,30 @@ kei does **not** accept the 2FA code on stdin. The correct flow is:
 5. Backend runs `kei login submit-code <CODE>` as a separate process.
 6. kei sync continues automatically once the code is accepted.
 
+## kei binary (sidecar)
+
+The kei binary is bundled using Tauri's `externalBin` mechanism. Before building or running in dev mode, run:
+
+```bash
+npm run prepare-sidecar
+```
+
+This copies the locally-installed kei binary to `src-tauri/binaries/kei-<target-triple>[.exe]`. The binaries directory is gitignored.
+
+`which_kei()` in `main.rs` resolves the binary in this order:
+1. Sidecar alongside the current executable (`current_exe().parent()/kei[.exe]`)
+2. `$KEI_BIN` env override
+3. Common install locations (`~/.cargo/bin`, Homebrew, `/usr/local/bin`, etc.)
+4. `which`/`where` PATH lookup
+
 ## kei data locations
 
-| Path | Contents |
-|---|---|
-| `~/.config/kei/config.toml` | Main configuration |
-| `~/.config/kei/<username>.db` | SQLite state database |
-| `~/.config/kei/health.json` | Last-sync health status (not currently used by the GUI) |
+| Platform | Config dir | Database |
+|---|---|---|
+| macOS / Linux | `~/.config/kei/` | `~/.config/kei/cookies/<sanitised_username>.db` |
+| Windows | `%APPDATA%\kei\` | `%APPDATA%\kei\cookies\<sanitised_username>.db` |
 
-The database username is sanitised: non-alphanumeric chars (including `@` and `.`) become `_`. The `db_path()` helper in `main.rs` tries the sanitised name first, then falls back to any `.db` file in the config dir.
+`kei_config_dir()` in `main.rs` returns the correct platform path. The username is sanitised by keeping only alphanumeric chars and `-` (stripping `@`, `.`, etc.).
 
 ## SQLite schema (read-only)
 
@@ -123,11 +144,36 @@ All fields are `Option` so that unset fields are omitted from the TOML output (k
 
 ## Frontend conventions
 
-- No build step. `index.html` loads `src/app.js` as `type="module"` and `src/styles.css` directly.
+- Bundled by Vite (dev server on port 1420). `index.html` loads `src/app.js` as `type="module"`.
 - Navigation is done by toggling `class="view active"` on `<section>` elements.
 - Each view has a load function (`loadDashboard`, `loadHistory`, `loadSettings`) called when the view is shown.
-- The sync log uses `span.log-line` elements with optional `err` / `warn` / `success` classes for colouring.
+- The sync log uses the parser registry in `src/log-parsers.js` — add new parsers there, not in `app.js`.
 - CSS variables are defined on `:root` for light mode and overridden in `@media (prefers-color-scheme: dark)`.
+- Visibility is controlled with `.hidden` class (never inline `style="display:none"`).
+
+## Log parser registry (src/log-parsers.js)
+
+Each parser is `{ name, match(line), parse(line), render(entry) }`. Register with `registerParser()`.
+
+```js
+// Exports
+stripAnsi(s)           // strips ANSI escape codes
+dedupKey(parsed)       // returns "level:module:message" for kei-tracing, else null
+parseLine(raw)         // normalises + dispatches to first matching parser
+renderEntry(parsed)    // dispatches to matching parser's render()
+registerParser(parser) // appends to registry
+```
+
+Built-in parsers: `kei-tracing` (timestamp + level + module + fields), `kei-summary` (── separator lines).
+
+Message labels live in `MESSAGE_LABELS` (exact match) and `MESSAGE_PREFIX_LABELS` (prefix match) — add new ones there to humanise kei output without touching render logic.
+
+## Platform notes
+
+- `titleBarStyle: "Overlay"` and `hiddenTitle: true` in `tauri.conf.json` are macOS-only; Tauri ignores them on Windows/Linux (native window decorations are used instead).
+- `-webkit-app-region: drag` in CSS works in WKWebView (macOS), WebView2 (Windows), and WebKitGTK (Linux) within Tauri.
+- `kei_config_dir()` uses `%APPDATA%` on Windows, `~/.config/kei` elsewhere.
+- The binary name is `kei` on Unix and `kei.exe` on Windows; `which_kei()` handles this with `#[cfg(target_os = "windows")]`.
 
 ## Adding a new backend command
 
@@ -140,12 +186,13 @@ All fields are `Option` so that unset fields are omitted from the TOML output (k
 
 1. Add a `<section id="view-<name>" class="view">` in `index.html`.
 2. Add a `<li class="nav-item" data-view="<name>">` in the sidebar.
-3. Add a `case "<name>":` branch in the `showView` function in `app.js`.
+3. Add an entry to `VIEW_TITLES` and a load-function call in `showView()` in `app.js`.
 
 ## Common pitfalls
 
-- **`use tauri::Emitter`** must be in scope to call `.emit()` on an `AppHandle`. It is already imported in `main.rs`; don't remove it.
+- **`use tauri::Emitter`** must be in scope to call `.emit()` on an `AppHandle`. Already imported; don't remove it.
 - **`rusqlite` is synchronous.** Always wrap DB calls in `tokio::task::spawn_blocking(|| { ... }).await`.
-- **`Option` fields in config structs should stay `None` when not set** — serialising `None` with `#[serde(skip_serializing_if = "Option::is_none")]` would keep the TOML clean, but that attribute is not currently applied. If you add it, add it to all `Option` fields consistently.
-- **The `frontendDist` path is `"../"` (relative to `src-tauri/`).** Do not set `devUrl` to a file path — Tauri's build validator requires it to be a valid URL or absent.
-- **Icons must be RGBA PNG.** The placeholder at `src-tauri/icons/icon.png` is a solid blue 512×512 RGBA PNG. Replace it before shipping.
+- **`Option` fields in config structs should stay `None` when not set** — they are serialised as absent TOML keys, which kei treats as "use default".
+- **The `frontendDist` path is `"../dist"`.** Do not set `devUrl` to a file path — Tauri's validator requires it to be a proper URL.
+- **Icons must be RGBA PNG.** The placeholder at `src-tauri/icons/icon.png` is a solid blue 512×512 RGBA PNG. Replace before shipping.
+- **`TRACING_RE` uses `(\S+)` for the module group**, not `[^:]+` — Rust module paths contain `::` and the old pattern would fail to match them.

@@ -433,5 +433,23 @@ twofaInput.addEventListener("keydown", (e) => {
 // Boot
 // ---------------------------------------------------------------------------
 
+// Check that the kei binary is available before showing the normal UI.
+(async () => {
+  try {
+    await invoke("check_kei");
+  } catch {
+    document.getElementById("kei-missing-overlay").classList.remove("hidden");
+  }
+})();
+
+document.getElementById("copy-install-cmd").addEventListener("click", () => {
+  const text = document.getElementById("install-cmd-text").textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById("copy-install-cmd");
+    btn.textContent = "Copied!";
+    setTimeout(() => { btn.textContent = "Copy"; }, 2000);
+  });
+});
+
 toolbarTitle.textContent = VIEW_TITLES["dashboard"];
 loadDashboard();

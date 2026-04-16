@@ -237,6 +237,21 @@
     </div><!-- /#right-col -->
   </div><!-- /#app -->
 
+  <!-- kei not found overlay -->
+  <div id="kei-missing-overlay" class="hidden">
+    <div id="kei-missing-card">
+      <div class="kei-missing-icon">K</div>
+      <h2>kei not found</h2>
+      <p>This app requires the <strong>kei</strong> sync engine, but it could not be located on your system.</p>
+      <p>Install it with Cargo and restart the app:</p>
+      <div class="install-command">
+        <code id="install-cmd-text">cargo install kei</code>
+        <button type="button" class="btn-ghost" id="copy-install-cmd">Copy</button>
+      </div>
+      <p class="install-hint">Don't have Cargo? Install Rust from <strong>rustup.rs</strong> first.</p>
+    </div>
+  </div>
+
   <!-- 2FA Modal -->
   <div id="modal-overlay" class="hidden">
     <div id="modal-2fa">
@@ -244,8 +259,8 @@
       <p>kei is requesting a 2FA code. Check your trusted Apple devices for a verification code, then enter it below.</p>
       <input type="text" id="twofa-input" maxlength="6" placeholder="000000" autocomplete="one-time-code" />
       <div class="modal-actions">
-        <button class="btn-ghost" id="twofa-cancel-btn">Cancel</button>
-        <button class="btn-primary" id="twofa-submit-btn">Submit Code</button>
+        <button type="button" class="btn-ghost" id="twofa-cancel-btn">Cancel</button>
+        <button type="button" class="btn-primary" id="twofa-submit-btn">Submit Code</button>
       </div>
     </div>
   </div>

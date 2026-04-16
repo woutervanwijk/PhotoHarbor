@@ -629,6 +629,80 @@ html, body {
 
 .btn-ghost:hover { background: var(--btn-ghost-hover); }
 
+/* ── kei not found overlay ───────────────────────────────────────────────── */
+
+#kei-missing-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+#kei-missing-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  padding: 40px 44px;
+  width: 440px;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.10);
+}
+
+.kei-missing-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 28px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+}
+
+#kei-missing-card h2 {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+#kei-missing-card p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+
+.install-command {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  text-align: left;
+}
+
+.install-command code {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.install-hint {
+  font-size: 12px !important;
+  color: var(--text-tertiary) !important;
+  margin-bottom: 0 !important;
+}
+
 /* ── Modal ───────────────────────────────────────────────────────────────── */
 
 #modal-overlay {

@@ -1,13 +1,14 @@
 {
   "name": "kei-photosync",
   "version": "0.1.0",
-  "description": "macOS GUI for the kei iCloud photo sync tool",
+  "description": "GUI for the kei iCloud photo sync tool",
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build",
     "vite:dev": "vite",
-    "vite:build": "vite build"
+    "vite:build": "vite build",
+    "prepare-sidecar": "node scripts/prepare-sidecar.js"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
