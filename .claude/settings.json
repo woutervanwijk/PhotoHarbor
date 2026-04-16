@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.github.com)",
+      "Read(//Users/wouter/**)",
+      "Bash(npm install *)",
+      "Bash(cargo check *)",
+      "Bash(python3 -c ' *)",
+      "Bash(wait)"
+    ]
+  }
+}

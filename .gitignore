@@ -1,0 +1,10 @@
+node_modules/
+
+# Rust build output
+src-tauri/target/
+
+# Tauri-generated files (produced by tauri dev / tauri build)
+src-tauri/gen/
+
+# macOS
+.DS_Store
