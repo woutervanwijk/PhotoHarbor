@@ -7,6 +7,9 @@ import { listen } from "@tauri-apps/api/event";
 
 const views = document.querySelectorAll(".view");
 const navItems = document.querySelectorAll(".nav-item");
+const toolbarTitle = document.getElementById("toolbar-title");
+
+const VIEW_TITLES = { dashboard: "Dashboard", sync: "Sync", history: "History", settings: "Settings" };
 
 function showView(name) {
   views.forEach((v) => v.classList.remove("active"));
@@ -15,6 +18,7 @@ function showView(name) {
   if (target) target.classList.add("active");
   const navItem = document.querySelector(`[data-view="${name}"]`);
   if (navItem) navItem.classList.add("active");
+  toolbarTitle.textContent = VIEW_TITLES[name] ?? "";
 
   if (name === "dashboard") loadDashboard();
   if (name === "history") loadHistory();
@@ -73,9 +77,8 @@ async function loadDashboard() {
     document.getElementById("last-dl-failed").textContent = fmtNum(status.last_run_failed);
 
     const noConfig = document.getElementById("dashboard-no-config");
-    const stats = document.getElementById("dashboard-stats");
     const hasData = status.total_assets > 0 || status.last_run_started;
-    noConfig.style.display = hasData ? "none" : "block";
+    noConfig.classList.toggle("hidden", hasData);
   } catch (err) {
     console.error("get_status error:", err);
   }
@@ -90,6 +93,77 @@ const startBtn = document.getElementById("sync-start-btn");
 const stopBtn = document.getElementById("sync-stop-btn");
 const badge = document.getElementById("sync-status-badge");
 const progressWrap = document.getElementById("progress-bar-wrap");
+
+// ---------------------------------------------------------------------------
+// Global log panel
+// ---------------------------------------------------------------------------
+
+const logPanel = document.getElementById("log-panel");
+const globalLog = document.getElementById("global-log");
+const logToggleBtn = document.getElementById("log-toggle-btn");
+const logBadge = document.getElementById("log-badge");
+let logPanelOpen = false;
+let logUnread = false;
+
+function setLogPanelOpen(open) {
+  logPanelOpen = open;
+  logPanel.classList.toggle("open", open);
+  logToggleBtn.classList.toggle("active", open);
+  if (open) {
+    logUnread = false;
+    logBadge.classList.remove("visible");
+    globalLog.scrollTop = globalLog.scrollHeight;
+  }
+}
+
+logToggleBtn.addEventListener("click", () => setLogPanelOpen(!logPanelOpen));
+document.getElementById("log-panel-close-btn").addEventListener("click", () => setLogPanelOpen(false));
+document.getElementById("global-log-clear-btn").addEventListener("click", () => {
+  globalLog.textContent = "";
+});
+
+// Drag-to-resize handle
+const resizeHandle = document.getElementById("log-panel-resize");
+resizeHandle.addEventListener("mousedown", (e) => {
+  e.preventDefault();
+  const startY = e.clientY;
+  const startH = logPanel.getBoundingClientRect().height;
+
+  function onMove(ev) {
+    const newH = Math.max(80, Math.min(600, startH - (ev.clientY - startY)));
+    logPanel.style.setProperty("--log-panel-height", `${newH}px`);
+  }
+  function onUp() {
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onUp);
+  }
+  document.addEventListener("mousemove", onMove);
+  document.addEventListener("mouseup", onUp);
+});
+
+function appendGlobalLog(text, cls = "") {
+  const line = document.createElement("span");
+  const lower = text.toLowerCase();
+  if (!cls) {
+    if (lower.includes("error") || lower.includes("[err]")) cls = "err";
+    else if (lower.includes("warn")) cls = "warn";
+    else if (lower.includes("downloaded") || lower.includes("complete")) cls = "success";
+  }
+  line.className = `log-line ${cls}`;
+  line.textContent = text;
+  globalLog.appendChild(line);
+  globalLog.appendChild(document.createTextNode("\n"));
+  if (logPanelOpen) {
+    globalLog.scrollTop = globalLog.scrollHeight;
+  } else {
+    logUnread = true;
+    logBadge.classList.add("visible");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sync view
+// ---------------------------------------------------------------------------
 
 let syncRunning = false;
 
@@ -116,19 +190,24 @@ function setSyncRunning(running) {
   stopBtn.disabled = !running;
   badge.textContent = running ? "Running" : "Idle";
   badge.className = `badge ${running ? "running" : ""}`;
-  progressWrap.style.display = running ? "block" : "none";
+  progressWrap.classList.toggle("hidden", !running);
 }
 
 // Register Tauri event listeners once.
-listen("sync-output", (event) => appendLog(event.payload));
+listen("sync-output", (event) => {
+  appendLog(event.payload);
+  appendGlobalLog(event.payload);
+});
 listen("sync-2fa-required", () => show2FAModal());
 listen("sync-completed", () => {
   setSyncRunning(false);
   appendLog("── Sync completed ──", "success");
+  appendGlobalLog("── Sync completed ──", "success");
 });
 listen("sync-failed", (event) => {
   setSyncRunning(false);
   appendLog(`── Sync failed: ${event.payload} ──`, "err");
+  appendGlobalLog(`── Sync failed: ${event.payload} ──`, "err");
   badge.classList.add("error");
 });
 
@@ -279,8 +358,8 @@ document.getElementById("settings-form").addEventListener("submit", async (e) =>
   try {
     await invoke("save_config", { config });
     const msg = document.getElementById("settings-saved-msg");
-    msg.style.display = "inline";
-    setTimeout(() => (msg.style.display = "none"), 2500);
+    msg.classList.remove("hidden");
+    setTimeout(() => msg.classList.add("hidden"), 2500);
   } catch (err) {
     alert(`Failed to save settings:\n${err}`);
   }
@@ -295,12 +374,12 @@ const twofaInput = document.getElementById("twofa-input");
 
 function show2FAModal() {
   twofaInput.value = "";
-  modalOverlay.style.display = "flex";
+  modalOverlay.classList.remove("hidden");
   setTimeout(() => twofaInput.focus(), 100);
 }
 
 function hide2FAModal() {
-  modalOverlay.style.display = "none";
+  modalOverlay.classList.add("hidden");
 }
 
 document.getElementById("twofa-cancel-btn").addEventListener("click", hide2FAModal);
@@ -326,4 +405,5 @@ twofaInput.addEventListener("keydown", (e) => {
 // Boot
 // ---------------------------------------------------------------------------
 
+toolbarTitle.textContent = VIEW_TITLES["dashboard"];
 loadDashboard();

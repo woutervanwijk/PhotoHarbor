@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "identifier": "com.kei.photosync",
   "build": {
-    "frontendDist": "../"
+    "beforeDevCommand": "npm run vite:dev",
+    "beforeBuildCommand": "npm run vite:build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
   },
   "app": {
     "windows": [

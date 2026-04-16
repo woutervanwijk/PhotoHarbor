@@ -1,5 +1,8 @@
 node_modules/
 
+# Vite build output
+dist/
+
 # Rust build output
 src-tauri/target/
 

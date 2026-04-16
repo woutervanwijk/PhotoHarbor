@@ -80,6 +80,10 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ── Utility ─────────────────────────────────────────────────────────────── */
+
+.hidden { display: none !important; }
+
 /* ── App shell ───────────────────────────────────────────────────────────── */
 
 #app {
@@ -87,6 +91,66 @@ html, body {
   height: 100vh;
   width: 100vw;
 }
+
+/* ── Right column ────────────────────────────────────────────────────────── */
+
+#right-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+
+#toolbar {
+  height: 52px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px 0 20px;
+  border-bottom: 1px solid var(--sidebar-border);
+  -webkit-app-region: drag;
+  background: var(--sidebar-bg);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+#toolbar-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+#toolbar-actions {
+  display: flex;
+  gap: 6px;
+  -webkit-app-region: no-drag;
+}
+
+.toolbar-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.toolbar-btn.active {
+  background: rgba(0, 122, 255, 0.12);
+  color: var(--accent);
+}
+
+.log-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: none;
+}
+
+.log-badge-dot.visible { display: inline-block; }
 
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
 
@@ -175,7 +239,7 @@ html, body {
 #content {
   flex: 1;
   overflow-y: auto;
-  padding: 52px 28px 28px;
+  padding: 24px 28px 28px;
   background: var(--bg);
 }
 
@@ -578,6 +642,67 @@ html, body {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+
+/* ── Global log panel ────────────────────────────────────────────────────── */
+
+#log-panel {
+  flex-shrink: 0;
+  height: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--sidebar-border);
+  display: flex;
+  flex-direction: column;
+  transition: height 0.18s ease;
+  background: var(--log-bg);
+}
+
+#log-panel.open {
+  height: var(--log-panel-height, 200px);
+}
+
+#log-panel-resize {
+  height: 4px;
+  cursor: ns-resize;
+  flex-shrink: 0;
+  background: transparent;
+}
+
+#log-panel-resize:hover { background: rgba(255, 255, 255, 0.06); }
+
+#log-panel-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+#log-panel-actions {
+  display: flex;
+  gap: 4px;
+}
+
+#log-panel-actions .btn-ghost {
+  font-size: 11px;
+  padding: 3px 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--log-text);
+}
+
+#log-panel-actions .btn-ghost:hover { background: rgba(255, 255, 255, 0.12); }
+
+#global-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 14px 10px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--log-text);
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 /* ── Scrollbars ──────────────────────────────────────────────────────────── */

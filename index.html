@@ -31,12 +31,26 @@
       </ul>
     </nav>
 
+    <!-- Right column: toolbar + content + log panel -->
+    <div id="right-col">
+
+    <!-- Toolbar (sits in the macOS title-bar drag zone) -->
+    <div id="toolbar">
+      <span id="toolbar-title"></span>
+      <div id="toolbar-actions">
+        <button type="button" class="btn-ghost toolbar-btn" id="log-toggle-btn" title="Toggle output log">
+          Log
+          <span id="log-badge" class="log-badge-dot"></span>
+        </button>
+      </div>
+    </div>
+
     <!-- Main content area -->
     <main id="content">
       <!-- ── Dashboard ────────────────────────────────────────────── -->
       <section id="view-dashboard" class="view active">
         <h1 class="view-title">Dashboard</h1>
-        <div id="dashboard-no-config" class="notice" style="display:none">
+        <div id="dashboard-no-config" class="notice hidden">
           <p>No configuration found. Head to <strong>Settings</strong> to enter your iCloud username and download directory.</p>
         </div>
         <div id="dashboard-stats">
@@ -77,7 +91,7 @@
           <button class="btn-destructive" id="sync-stop-btn" disabled>Stop</button>
           <span id="sync-status-badge" class="badge">Idle</span>
         </div>
-        <div id="progress-bar-wrap" style="display:none">
+        <div id="progress-bar-wrap" class="hidden">
           <div id="progress-bar-inner"></div>
         </div>
         <div class="section-card log-card">
@@ -201,15 +215,30 @@
 
           <div class="form-actions">
             <button type="submit" class="btn-primary">Save Settings</button>
-            <span id="settings-saved-msg" style="display:none" class="saved-msg">Saved!</span>
+            <span id="settings-saved-msg" class="saved-msg hidden">Saved!</span>
           </div>
         </form>
       </section>
     </main>
-  </div>
+
+    <!-- Global log panel (bottom drawer) -->
+    <div id="log-panel">
+      <div id="log-panel-resize"></div>
+      <div id="log-panel-toolbar">
+        <span class="log-title">kei output</span>
+        <div id="log-panel-actions">
+          <button type="button" class="btn-ghost" id="global-log-clear-btn">Clear</button>
+          <button type="button" class="btn-ghost" id="log-panel-close-btn">✕</button>
+        </div>
+      </div>
+      <div id="global-log"></div>
+    </div>
+
+    </div><!-- /#right-col -->
+  </div><!-- /#app -->
 
   <!-- 2FA Modal -->
-  <div id="modal-overlay" style="display:none">
+  <div id="modal-overlay" class="hidden">
     <div id="modal-2fa">
       <h2>Two-Factor Authentication</h2>
       <p>kei is requesting a 2FA code. Check your trusted Apple devices for a verification code, then enter it below.</p>

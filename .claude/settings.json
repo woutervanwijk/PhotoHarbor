@@ -8,7 +8,8 @@
       "Bash(npm install *)",
       "Bash(cargo check *)",
       "Bash(python3 -c ' *)",
-      "Bash(wait)"
+      "Bash(wait)",
+      "Bash(npm run *)"
     ]
   }
 }
