@@ -97,9 +97,13 @@
         <div class="section-card log-card">
           <div class="log-toolbar">
             <span class="log-title">Output</span>
-            <button class="btn-ghost" id="clear-log-btn">Clear</button>
+            <button type="button" class="btn-ghost" id="clear-log-btn">Clear</button>
           </div>
-          <div id="sync-log"></div>
+          <div id="sync-log-compact"><span class="log-compact-placeholder">—</span></div>
+          <div id="sync-log" class="hidden"></div>
+          <button type="button" id="log-expand-btn" title="Toggle full log">
+            <span class="log-expand-chevron"></span>
+          </button>
         </div>
       </section>
 

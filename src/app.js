@@ -93,10 +93,23 @@ async function loadDashboard() {
 // ---------------------------------------------------------------------------
 
 const syncLog = document.getElementById("sync-log");
+const syncLogCompact = document.getElementById("sync-log-compact");
+const logExpandBtn = document.getElementById("log-expand-btn");
 const startBtn = document.getElementById("sync-start-btn");
 const stopBtn = document.getElementById("sync-stop-btn");
 const badge = document.getElementById("sync-status-badge");
 const progressWrap = document.getElementById("progress-bar-wrap");
+
+let logExpanded = false;
+
+function setLogExpanded(expanded) {
+  logExpanded = expanded;
+  syncLog.classList.toggle("hidden", !expanded);
+  logExpandBtn.classList.toggle("expanded", expanded);
+  if (expanded) syncLog.scrollTop = syncLog.scrollHeight;
+}
+
+logExpandBtn.addEventListener("click", () => setLogExpanded(!logExpanded));
 
 // ---------------------------------------------------------------------------
 // Global log panel
@@ -194,16 +207,18 @@ function appendLog(raw) {
     const timeEl = _lastSyncEl.querySelector("[data-role='time']");
     if (timeEl && parsed.time) timeEl.textContent = parsed.time;
     syncLog.scrollTop = syncLog.scrollHeight;
-    return;
+  } else {
+    // New or different entry — render and append.
+    const entryEl = renderEntry(parsed);
+    syncLog.appendChild(entryEl);
+    _lastSyncEl = entryEl;
+    _lastSyncKey = key;
+    _lastSyncCount = 1;
+    syncLog.scrollTop = syncLog.scrollHeight;
   }
 
-  // New or different entry — render and append.
-  const entryEl = renderEntry(parsed);
-  syncLog.appendChild(entryEl);
-  _lastSyncEl = entryEl;
-  _lastSyncKey = key;
-  _lastSyncCount = 1;
-  syncLog.scrollTop = syncLog.scrollHeight;
+  // Always update the compact single-entry view.
+  syncLogCompact.replaceChildren(renderEntry(parsed));
 }
 
 function setSyncRunning(running) {
@@ -237,6 +252,7 @@ async function doStartSync() {
   if (syncRunning) return;
   setSyncRunning(true);
   syncLog.textContent = "";
+  syncLogCompact.innerHTML = '<span class="log-compact-placeholder">—</span>';
   resetSyncDedup();
   try {
     await invoke("start_sync");
@@ -260,6 +276,8 @@ stopBtn.addEventListener("click", async () => {
 
 document.getElementById("clear-log-btn").addEventListener("click", () => {
   syncLog.textContent = "";
+  syncLogCompact.innerHTML = '<span class="log-compact-placeholder">—</span>';
+  resetSyncDedup();
 });
 
 // ---------------------------------------------------------------------------

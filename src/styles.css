@@ -450,12 +450,67 @@ html, body {
 
 .log-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
 
+/* Compact single-entry status view */
+#sync-log-compact {
+  padding: 2px 0;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+}
+
+#sync-log-compact .log-entry {
+  flex: 1;
+}
+
+.log-compact-placeholder {
+  padding: 0 16px;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+/* Full log — hidden by default, revealed by expand toggle */
 #sync-log {
   background: var(--card-bg);
-  height: 320px;
+  max-height: 320px;
   overflow-y: auto;
+  border-top: 1px solid var(--card-border);
+  padding: 4px 0 4px;
+}
+
+/* Expand / collapse toggle button */
+#log-expand-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 5px 0;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--card-border);
   border-radius: 0 0 var(--radius) var(--radius);
-  padding: 4px 0 8px;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  transition: background 0.12s, color 0.12s;
+}
+
+#log-expand-btn:hover {
+  background: var(--btn-ghost-hover);
+  color: var(--text-secondary);
+}
+
+/* CSS chevron — points down by default, up when expanded */
+.log-expand-chevron {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translate(-1px, -1px);
+  transition: transform 0.2s;
+}
+
+#log-expand-btn.expanded .log-expand-chevron {
+  transform: rotate(-135deg) translate(-1px, -1px);
 }
 
 /* ── History table ───────────────────────────────────────────────────────── */
