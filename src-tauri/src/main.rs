@@ -96,31 +96,38 @@ fn config_path() -> Result<std::path::PathBuf, String> {
 }
 
 /// Locate the SQLite database for a given username.
-/// kei names the DB after the username with special chars replaced by '_'.
+/// kei stores databases in ~/.config/kei/cookies/<sanitised_username>.db
+/// where sanitisation strips all non-alphanumeric characters (except '-').
 fn db_path(username: &str) -> Result<std::path::PathBuf, String> {
     let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
     let base = std::path::PathBuf::from(home).join(".config/kei");
+    let cookies_dir = base.join("cookies");
 
-    // Try the exact sanitised name first (@ → _, . → _).
-    let sanitised: String = username.chars().map(|c| {
-        if c.is_alphanumeric() || c == '-' { c } else { '_' }
-    }).collect();
+    // kei strips non-alphanumeric chars (except '-') from the username.
+    let sanitised: String = username
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '-')
+        .collect();
 
-    let candidate = base.join(format!("{}.db", sanitised));
+    // Primary: ~/.config/kei/cookies/<sanitised>.db
+    let candidate = cookies_dir.join(format!("{}.db", sanitised));
     if candidate.exists() {
         return Ok(candidate);
     }
 
-    // Fallback: pick the first .db file in the config dir.
-    let rd = std::fs::read_dir(&base).map_err(|e| e.to_string())?;
-    for entry in rd.flatten() {
-        let p = entry.path();
-        if p.extension().and_then(|x| x.to_str()) == Some("db") {
-            return Ok(p);
+    // Fallback: any .db file in cookies/ or the config dir itself.
+    for dir in [&cookies_dir, &base] {
+        if let Ok(rd) = std::fs::read_dir(dir) {
+            for entry in rd.flatten() {
+                let p = entry.path();
+                if p.extension().and_then(|x| x.to_str()) == Some("db") {
+                    return Ok(p);
+                }
+            }
         }
     }
 
-    Err(format!("No kei database found in {:?}", base))
+    Err(format!("No kei database found in {:?}", cookies_dir))
 }
 
 // ---------------------------------------------------------------------------

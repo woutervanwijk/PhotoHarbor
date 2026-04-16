@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { parseLine, renderEntry, stripAnsi, dedupKey } from "./log-parsers.js";
 
 // ---------------------------------------------------------------------------
 // Navigation
@@ -29,9 +30,11 @@ navItems.forEach((item) => {
   item.addEventListener("click", () => showView(item.dataset.view));
 });
 
-document.getElementById("dashboard-sync-btn").addEventListener("click", () =>
-  showView("sync")
-);
+document.getElementById("dashboard-sync-btn").addEventListener("click", () => {
+  showView("sync");
+  // Kick off the sync after navigation so the log is visible immediately.
+  doStartSync();
+});
 
 // ---------------------------------------------------------------------------
 // Utilities
@@ -66,7 +69,8 @@ function fmtNum(n) {
 
 async function loadDashboard() {
   try {
-    const status = await invoke("get_status");
+    const [status, cfg] = await Promise.all([invoke("get_status"), invoke("get_config")]);
+
     document.getElementById("stat-downloaded").textContent = fmtNum(status.downloaded);
     document.getElementById("stat-pending").textContent = fmtNum(status.pending);
     document.getElementById("stat-failed").textContent = fmtNum(status.failed);
@@ -77,8 +81,8 @@ async function loadDashboard() {
     document.getElementById("last-dl-failed").textContent = fmtNum(status.last_run_failed);
 
     const noConfig = document.getElementById("dashboard-no-config");
-    const hasData = status.total_assets > 0 || status.last_run_started;
-    noConfig.classList.toggle("hidden", hasData);
+    const isConfigured = !!(cfg.auth?.username && cfg.download?.directory);
+    noConfig.classList.toggle("hidden", isConfigured);
   } catch (err) {
     console.error("get_status error:", err);
   }
@@ -141,18 +145,14 @@ resizeHandle.addEventListener("mousedown", (e) => {
   document.addEventListener("mouseup", onUp);
 });
 
-function appendGlobalLog(text, cls = "") {
-  const line = document.createElement("span");
-  const lower = text.toLowerCase();
-  if (!cls) {
-    if (lower.includes("error") || lower.includes("[err]")) cls = "err";
-    else if (lower.includes("warn")) cls = "warn";
-    else if (lower.includes("downloaded") || lower.includes("complete")) cls = "success";
-  }
-  line.className = `log-line ${cls}`;
-  line.textContent = text;
+function appendGlobalLog(raw) {
+  const clean = stripAnsi(raw)
+    .replace(/^\[err\]\s*/, "")
+    .replace(/^\[out\]\s*/, "");
+  const line = document.createElement("div");
+  line.className = "raw-log-line";
+  line.textContent = clean;
   globalLog.appendChild(line);
-  globalLog.appendChild(document.createTextNode("\n"));
   if (logPanelOpen) {
     globalLog.scrollTop = globalLog.scrollHeight;
   } else {
@@ -167,20 +167,42 @@ function appendGlobalLog(text, cls = "") {
 
 let syncRunning = false;
 
-function appendLog(text, cls = "") {
-  const line = document.createElement("span");
-  line.className = `log-line ${cls}`;
-  // Colour-code by content
-  if (!cls) {
-    const lower = text.toLowerCase();
-    if (lower.includes("error") || lower.includes("[err]")) cls = "err";
-    else if (lower.includes("warn")) cls = "warn";
-    else if (lower.includes("downloaded") || lower.includes("complete")) cls = "success";
-    line.className = `log-line ${cls}`;
+// Dedup state for the sync log — reset each time a new sync starts.
+let _lastSyncEl = null;
+let _lastSyncKey = null;
+let _lastSyncCount = 1;
+
+function resetSyncDedup() {
+  _lastSyncEl = null;
+  _lastSyncKey = null;
+  _lastSyncCount = 1;
+}
+
+function appendLog(raw) {
+  const parsed = parseLine(raw);
+  const key = dedupKey(parsed);
+
+  if (key && key === _lastSyncKey && _lastSyncEl) {
+    // Same message as the previous entry — collapse into it.
+    _lastSyncCount++;
+    const countEl = _lastSyncEl.querySelector(".log-count");
+    if (countEl) {
+      countEl.textContent = `×${_lastSyncCount}`;
+      countEl.classList.remove("hidden");
+    }
+    // Advance the timestamp to the latest occurrence.
+    const timeEl = _lastSyncEl.querySelector("[data-role='time']");
+    if (timeEl && parsed.time) timeEl.textContent = parsed.time;
+    syncLog.scrollTop = syncLog.scrollHeight;
+    return;
   }
-  line.textContent = text;
-  syncLog.appendChild(line);
-  syncLog.appendChild(document.createTextNode("\n"));
+
+  // New or different entry — render and append.
+  const entryEl = renderEntry(parsed);
+  syncLog.appendChild(entryEl);
+  _lastSyncEl = entryEl;
+  _lastSyncKey = key;
+  _lastSyncCount = 1;
   syncLog.scrollTop = syncLog.scrollHeight;
 }
 
@@ -202,25 +224,29 @@ listen("sync-2fa-required", () => show2FAModal());
 listen("sync-completed", () => {
   setSyncRunning(false);
   appendLog("── Sync completed ──", "success");
-  appendGlobalLog("── Sync completed ──", "success");
+  appendGlobalLog("── Sync completed ──");
 });
 listen("sync-failed", (event) => {
   setSyncRunning(false);
   appendLog(`── Sync failed: ${event.payload} ──`, "err");
-  appendGlobalLog(`── Sync failed: ${event.payload} ──`, "err");
+  appendGlobalLog(`── Sync failed: ${event.payload} ──`);
   badge.classList.add("error");
 });
 
-startBtn.addEventListener("click", async () => {
+async function doStartSync() {
+  if (syncRunning) return;
   setSyncRunning(true);
   syncLog.textContent = "";
+  resetSyncDedup();
   try {
     await invoke("start_sync");
   } catch (err) {
     setSyncRunning(false);
-    appendLog(`Failed to start sync: ${err}`, "err");
+    appendLog(`Failed to start sync: ${err}`);
   }
-});
+}
+
+startBtn.addEventListener("click", () => doStartSync());
 
 stopBtn.addEventListener("click", async () => {
   try {
@@ -390,9 +416,11 @@ document.getElementById("twofa-submit-btn").addEventListener("click", async () =
   hide2FAModal();
   try {
     await invoke("submit_2fa", { code });
-    appendLog(`2FA code submitted.`, "success");
+    appendLog("2FA code submitted.", "success");
+    appendGlobalLog("2FA code submitted.");
   } catch (err) {
     appendLog(`2FA submission failed: ${err}`, "err");
+    appendGlobalLog(`2FA submission failed: ${err}`);
   }
 });
 

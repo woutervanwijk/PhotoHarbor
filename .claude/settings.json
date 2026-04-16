@@ -9,7 +9,8 @@
       "Bash(cargo check *)",
       "Bash(python3 -c ' *)",
       "Bash(wait)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(sqlite3 ~/.config/kei/cookies/woutervanwijkgmailcom.db \".tables\")"
     ]
   }
 }
