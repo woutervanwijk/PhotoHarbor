@@ -492,6 +492,10 @@ html, body {
   flex: 1;
 }
 
+#sync-log-compact .log-entry--summary {
+  border-top: none;
+}
+
 .log-compact-placeholder {
   padding: 0 16px;
   font-size: 13px;
@@ -674,10 +678,29 @@ html, body {
   font-weight: 500;
 }
 
+.input-with-btn {
+  flex: 1;
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.input-with-btn input {
+  flex: 1;
+  min-width: 0;
+}
+
+.input-btn {
+  flex-shrink: 0;
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
 .form-row input[type="text"],
 .form-row input[type="email"],
 .form-row input[type="number"],
-.form-row select {
+.form-row select,
+.input-with-btn input {
   flex: 1;
   min-width: 0;
   background: var(--input-bg);

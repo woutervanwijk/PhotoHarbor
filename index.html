@@ -51,7 +51,7 @@
       <section id="view-dashboard" class="view active">
         <h1 class="view-title">Dashboard</h1>
         <div id="dashboard-no-config" class="notice hidden">
-          <p>No configuration found. Head to <strong>Settings</strong> to enter your iCloud username and download directory.</p>
+          <p>No correct configuration found. Head to <strong>Settings</strong> to enter your iCloud username and download directory.</p>
         </div>
         <div id="dashboard-stats">
           <div class="stat-card">
@@ -177,7 +177,10 @@
             <h2 class="settings-group-title">Download</h2>
             <div class="form-row">
               <label for="cfg-directory">Download Directory</label>
-              <input type="text" id="cfg-directory" placeholder="~/Photos/iCloud" />
+              <div class="input-with-btn">
+                <input type="text" id="cfg-directory" placeholder="~/Photos/iCloud" />
+                <button type="button" class="btn-ghost input-btn" id="cfg-directory-pick">Browse…</button>
+              </div>
             </div>
             <div class="form-row">
               <label for="cfg-threads">Concurrent Downloads</label>

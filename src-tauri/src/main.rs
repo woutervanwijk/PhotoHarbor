@@ -621,6 +621,7 @@ async fn open_url(url: String) -> Result<(), String> {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
             sync_child: Arc::new(Mutex::new(None)),
             sync_stdin: Arc::new(Mutex::new(None)),

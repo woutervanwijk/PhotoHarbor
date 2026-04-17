@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { parseLine, renderEntry, stripAnsi, dedupKey } from "./log-parsers.js";
 
 // ---------------------------------------------------------------------------
@@ -378,6 +379,11 @@ function parseAlbums(val) {
     .filter(Boolean);
   return list.length > 0 ? list : null;
 }
+
+document.getElementById("cfg-directory-pick").addEventListener("click", async () => {
+  const dir = await openDialog({ directory: true, multiple: false, title: "Select Download Directory" });
+  if (dir) document.getElementById("cfg-directory").value = dir;
+});
 
 document.getElementById("auth-wiki-btn").addEventListener("click", () => {
   invoke("open_url", { url: "https://github.com/rhoopr/kei/wiki/Authentication" });
