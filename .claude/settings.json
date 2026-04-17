@@ -15,7 +15,12 @@
       "Bash(node scripts/prepare-sidecar.js)",
       "Bash(curl -s \"https://api.github.com/repos/rhoopr/kei/releases/latest\")",
       "Bash(python3 -c \"import json,sys; r=json.load\\(sys.stdin\\); print\\(r.get\\('tag_name',''\\)\\); [print\\(a['name'], a['browser_download_url']\\) for a in r.get\\('assets',[]\\)]\")",
-      "Bash(node scripts/prepare-sidecar.js --force)"
+      "Bash(node scripts/prepare-sidecar.js --force)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/wiki/rhoopr/kei/Authentication.md\")",
+      "Bash(curl -s \"https://github.com/rhoopr/kei/wiki/Authentication\")",
+      "Bash(python3 -c \"import sys,re; content=sys.stdin.read\\(\\); body=re.search\\(r'<div class=\\\\\"markdown-body[^\\\\\"]*\\\\\">\\(.*?\\)</div>', content, re.DOTALL\\); print\\(body.group\\(1\\) if body else content[:3000]\\)\")",
+      "Bash(kei login *)",
+      "Bash(kei sync *)"
     ]
   }
 }

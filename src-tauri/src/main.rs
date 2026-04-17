@@ -3,7 +3,7 @@
 
 use std::process::Stdio;
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
@@ -84,6 +84,9 @@ pub struct SyncRun {
 
 pub struct AppState {
     pub sync_child: Arc<Mutex<Option<Child>>>,
+    /// Stdin pipe to the running kei process — used to respond to password
+    /// prompts without re-spawning the process.
+    pub sync_stdin: Arc<Mutex<Option<tokio::process::ChildStdin>>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -301,6 +304,38 @@ async fn get_history() -> Result<Vec<SyncRun>, String> {
     .map_err(|e| e.to_string())?
 }
 
+/// Detect whether a raw output line looks like an interactive password prompt.
+/// Matches lines that are short, end with ":", and mention "password" —
+/// while excluding structured tracing log lines (which have ISO timestamps).
+fn is_password_prompt(line: &str) -> bool {
+    // Strip common ANSI escape sequences for matching.
+    let clean: String = {
+        let mut s = String::with_capacity(line.len());
+        let mut chars = line.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '\x1b' {
+                // Skip until the final byte of the escape sequence (a letter).
+                for ch in chars.by_ref() {
+                    if ch.is_ascii_alphabetic() { break; }
+                }
+            } else {
+                s.push(c);
+            }
+        }
+        s
+    };
+    let lower = clean.to_lowercase();
+    let trimmed = clean.trim_end();
+    // Must mention "password", end with ":", be short, and NOT be a tracing line.
+    lower.contains("password")
+        && trimmed.ends_with(':')
+        && trimmed.len() < 160
+        && !lower.contains("  info ")
+        && !lower.contains("  warn ")
+        && !lower.contains("  error ")
+        && !lower.contains("  debug ")
+}
+
 #[tauri::command]
 async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     // Guard: don't double-start.
@@ -316,21 +351,26 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
 
     let mut child = Command::new(&kei_bin)
         .arg("sync")
+        .stdin(Stdio::piped())   // kept open so we can write password/2FA responses
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("Failed to launch kei: {e}"))?;
 
+    let stdin  = child.stdin.take().expect("stdin piped");
     let stdout = child.stdout.take().expect("stdout piped");
     let stderr = child.stderr.take().expect("stderr piped");
 
-    // Store child so stop_sync can kill it.
+    // Store child and stdin so stop_sync / submit_password can reach them.
     let child_arc = state.sync_child.clone();
+    let stdin_arc = state.sync_stdin.clone();
     *child_arc.lock().await = Some(child);
+    *stdin_arc.lock().await = Some(stdin);
 
     // Spawn task that streams stdout + stderr to the frontend.
     let app_handle = app.clone();
     let child_arc2 = child_arc.clone();
+    let stdin_arc2 = stdin_arc.clone();
     tokio::spawn(async move {
         let stdout_reader = BufReader::new(stdout);
         let stderr_reader = BufReader::new(stderr);
@@ -347,6 +387,8 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
                                 || l.contains("submit-code");
                             if is_2fa {
                                 let _ = app_handle.emit("sync-2fa-required", &l);
+                            } else if is_password_prompt(&l) {
+                                let _ = app_handle.emit("sync-password-required", &l);
                             }
                             let _ = app_handle.emit("sync-output", &l);
                         }
@@ -360,6 +402,9 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
                 line = stderr_lines.next_line() => {
                     match line {
                         Ok(Some(l)) => {
+                            if is_password_prompt(&l) {
+                                let _ = app_handle.emit("sync-password-required", &l);
+                            }
                             let _ = app_handle.emit("sync-output", format!("[err] {l}"));
                         }
                         Ok(None) => {}
@@ -373,6 +418,9 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
         while let Ok(Some(l)) = stderr_lines.next_line().await {
             let _ = app_handle.emit("sync-output", format!("[err] {l}"));
         }
+
+        // Drop stdin so kei sees EOF if it's still waiting.
+        *stdin_arc2.lock().await = None;
 
         // Wait for the process and clear state.
         let mut guard = child_arc2.lock().await;
@@ -396,12 +444,28 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
 
 #[tauri::command]
 async fn stop_sync(state: State<'_, AppState>) -> Result<(), String> {
+    // Drop stdin first so kei gets EOF before being killed.
+    *state.sync_stdin.lock().await = None;
     let mut guard = state.sync_child.lock().await;
     if let Some(child) = guard.as_mut() {
         child.kill().await.map_err(|e| e.to_string())?;
     }
     *guard = None;
     Ok(())
+}
+
+/// Write the user's password to kei's stdin so it can complete authentication.
+#[tauri::command]
+async fn submit_password(password: String, state: State<'_, AppState>) -> Result<(), String> {
+    let mut guard = state.sync_stdin.lock().await;
+    if let Some(stdin) = guard.as_mut() {
+        let line = format!("{}\n", password);
+        stdin.write_all(line.as_bytes()).await.map_err(|e| e.to_string())?;
+        stdin.flush().await.map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err("No sync in progress".to_string())
+    }
 }
 
 /// The 2FA flow in kei is handled by running `kei login submit-code <CODE>`
@@ -509,6 +573,26 @@ async fn check_kei() -> Result<String, String> {
     which_kei()
 }
 
+#[tauri::command]
+async fn open_url(url: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open")
+        .arg(&url)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "linux")]
+    std::process::Command::new("xdg-open")
+        .arg(&url)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    std::process::Command::new("cmd")
+        .args(["/c", "start", "", &url])
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
@@ -517,15 +601,18 @@ fn main() {
     tauri::Builder::default()
         .manage(AppState {
             sync_child: Arc::new(Mutex::new(None)),
+            sync_stdin: Arc::new(Mutex::new(None)),
         })
         .invoke_handler(tauri::generate_handler![
             check_kei,
+            open_url,
             get_config,
             save_config,
             get_status,
             get_history,
             start_sync,
             stop_sync,
+            submit_password,
             submit_2fa,
         ])
         .run(tauri::generate_context!())

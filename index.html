@@ -143,9 +143,24 @@
             <div class="form-row">
               <label for="cfg-domain">Region</label>
               <select id="cfg-domain">
-                <option value="com">com (international)</option>
-                <option value="cn">cn (China)</option>
+                <option value="com">International</option>
+                <option value="cn">China</option>
               </select>
+            </div>
+            <div class="auth-help">
+              <div class="auth-help-row">
+                <span class="auth-help-label">Password</span>
+                <span class="auth-help-text">Not stored here — kei saves credentials in the system keychain. Run <code>kei config setup</code> in a terminal to set your password.</span>
+              </div>
+              <div class="auth-help-row">
+                <span class="auth-help-label">Two-Factor Auth</span>
+                <span class="auth-help-text">When required, enter the 6-digit code from your trusted Apple device. SMS codes are not supported.</span>
+              </div>
+              <div class="auth-help-row">
+                <span class="auth-help-label">Advanced Data Protection</span>
+                <span class="auth-help-text">ADP must be <strong>disabled</strong> in your iCloud settings, and "Access iCloud Data on the Web" must be enabled. Otherwise kei cannot access your photos.</span>
+              </div>
+              <button type="button" class="auth-wiki-link" id="auth-wiki-btn">Authentication guide ↗</button>
             </div>
           </div>
 
@@ -253,6 +268,19 @@
         <button type="button" class="btn-ghost" id="copy-install-cmd">Copy</button>
       </div>
       <p class="install-hint">Don't have Cargo? Install Rust from <strong>rustup.rs</strong> first.</p>
+    </div>
+  </div>
+
+  <!-- Password Modal -->
+  <div id="modal-password-overlay" class="hidden">
+    <div id="modal-password">
+      <h2>iCloud Password</h2>
+      <p>kei needs your Apple ID password to sign in. Your password is passed directly to kei and is not stored by this app.</p>
+      <input type="password" id="password-input" placeholder="Apple ID password" autocomplete="current-password" />
+      <div class="modal-actions">
+        <button type="button" class="btn-ghost" id="password-cancel-btn">Cancel</button>
+        <button type="button" class="btn-primary" id="password-submit-btn">Sign In</button>
+      </div>
     </div>
   </div>
 

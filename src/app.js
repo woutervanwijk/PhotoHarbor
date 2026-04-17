@@ -358,6 +358,10 @@ function parseAlbums(val) {
   return list.length > 0 ? list : null;
 }
 
+document.getElementById("auth-wiki-btn").addEventListener("click", () => {
+  invoke("open_url", { url: "https://github.com/rhoopr/kei/wiki/Authentication" });
+});
+
 document.getElementById("settings-form").addEventListener("submit", async (e) => {
   e.preventDefault();
 
@@ -408,6 +412,47 @@ document.getElementById("settings-form").addEventListener("submit", async (e) =>
     alert(`Failed to save settings:\n${err}`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Password Modal
+// ---------------------------------------------------------------------------
+
+const passwordOverlay = document.getElementById("modal-password-overlay");
+const passwordInput = document.getElementById("password-input");
+
+function showPasswordModal() {
+  passwordInput.value = "";
+  passwordOverlay.classList.remove("hidden");
+  setTimeout(() => passwordInput.focus(), 100);
+}
+
+function hidePasswordModal() {
+  passwordOverlay.classList.add("hidden");
+}
+
+document.getElementById("password-cancel-btn").addEventListener("click", () => {
+  hidePasswordModal();
+  appendLog("── Password entry cancelled ──");
+  setSyncRunning(false);
+});
+
+document.getElementById("password-submit-btn").addEventListener("click", async () => {
+  const password = passwordInput.value;
+  if (!password) return;
+  hidePasswordModal();
+  try {
+    await invoke("submit_password", { password });
+  } catch (err) {
+    appendLog(`Failed to submit password: ${err}`, "err");
+    appendGlobalLog(`Failed to submit password: ${err}`);
+  }
+});
+
+passwordInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") document.getElementById("password-submit-btn").click();
+});
+
+listen("sync-password-required", () => showPasswordModal());
 
 // ---------------------------------------------------------------------------
 // 2FA Modal
