@@ -957,6 +957,24 @@ html, body {
   gap: 10px;
 }
 
+.twofa-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--card-border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+  margin: 4px auto 20px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.twofa-error-text {
+  color: var(--destructive) !important;
+}
+
 /* ── Global log panel ────────────────────────────────────────────────────── */
 
 #log-panel {

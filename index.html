@@ -300,11 +300,33 @@
   <div id="modal-overlay" class="hidden">
     <div id="modal-2fa">
       <h2>Two-Factor Authentication</h2>
-      <p>kei is requesting a 2FA code. Check your trusted Apple devices for a verification code, then enter it below.</p>
-      <input type="text" id="twofa-input" maxlength="6" placeholder="000000" autocomplete="one-time-code" />
-      <div class="modal-actions">
-        <button type="button" class="btn-ghost" id="twofa-cancel-btn">Cancel</button>
-        <button type="button" class="btn-primary" id="twofa-submit-btn">Submit Code</button>
+
+      <!-- State: sending push notification -->
+      <div id="twofa-state-sending">
+        <p>Sending a verification code to your trusted Apple devices…</p>
+        <div class="twofa-spinner"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn-ghost" id="twofa-cancel-btn">Cancel</button>
+        </div>
+      </div>
+
+      <!-- State: enter code -->
+      <div id="twofa-state-enter" class="hidden">
+        <p>Enter the 6-digit code that appeared on your trusted Apple device.</p>
+        <input type="text" id="twofa-input" maxlength="6" placeholder="000000" autocomplete="one-time-code" />
+        <div class="modal-actions">
+          <button type="button" class="btn-ghost" id="twofa-dismiss-btn">Cancel</button>
+          <button type="button" class="btn-primary" id="twofa-submit-btn">Submit Code</button>
+        </div>
+      </div>
+
+      <!-- State: error -->
+      <div id="twofa-state-error" class="hidden">
+        <p id="twofa-error-msg" class="twofa-error-text"></p>
+        <div class="modal-actions">
+          <button type="button" class="btn-ghost" id="twofa-error-cancel-btn">Cancel</button>
+          <button type="button" class="btn-primary" id="twofa-retry-btn">Try Again</button>
+        </div>
       </div>
     </div>
   </div>

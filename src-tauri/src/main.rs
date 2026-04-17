@@ -400,6 +400,7 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
                         Ok(Some(l)) => {
                             let is_2fa = l.contains("2FA code requested")
                                 || l.contains("2fa_required")
+                                || l.contains("get-code")
                                 || l.contains("submit-code");
                             if is_2fa {
                                 let _ = app_handle.emit("sync-2fa-required", &l);
@@ -487,6 +488,30 @@ async fn submit_password(password: String, state: State<'_, AppState>) -> Result
         Ok(())
     } else {
         Err("No sync in progress".to_string())
+    }
+}
+
+/// Trigger kei to push a 2FA code to the user's trusted Apple devices.
+/// This runs `kei login get-code` as a separate process and waits for it.
+#[tauri::command]
+async fn request_2fa_code() -> Result<(), String> {
+    let kei_bin = which_kei()?;
+    let output = Command::new(&kei_bin)
+        .args(["login", "get-code"])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run kei login get-code: {e}"))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Err(format!(
+            "kei login get-code failed: {}{}",
+            stderr.trim(),
+            stdout.trim()
+        ))
     }
 }
 
@@ -636,6 +661,7 @@ fn main() {
             start_sync,
             stop_sync,
             submit_password,
+            request_2fa_code,
             submit_2fa,
         ])
         .run(tauri::generate_context!())

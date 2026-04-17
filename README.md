@@ -153,3 +153,7 @@ npx tauri icon path/to/your-icon.png
 **Advanced Data Protection (ADP)** — kei cannot sync if ADP is enabled on your iCloud account. Disable it in System Settings → Apple ID → iCloud → Advanced Data Protection.
 
 **2FA loop** — If the 2FA dialog keeps appearing, your kei session may have expired. Run `kei verify` in the terminal to re-authenticate.
+
+--
+Icon from IO Images:
+https://pixabay.com/de/vectors/wolke-cloud-herunterladen-speichern-2044822/

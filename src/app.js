@@ -488,18 +488,78 @@ listen("sync-password-required", () => showPasswordModal());
 
 const modalOverlay = document.getElementById("modal-overlay");
 const twofaInput = document.getElementById("twofa-input");
+const twofaStateSending = document.getElementById("twofa-state-sending");
+const twofaStateEnter = document.getElementById("twofa-state-enter");
+const twofaStateError = document.getElementById("twofa-state-error");
 
-function show2FAModal() {
-  twofaInput.value = "";
-  modalOverlay.classList.remove("hidden");
-  setTimeout(() => twofaInput.focus(), 100);
+let twoFaInProgress = false;
+
+function set2FAState(state) {
+  twofaStateSending.classList.toggle("hidden", state !== "sending");
+  twofaStateEnter.classList.toggle("hidden", state !== "enter");
+  twofaStateError.classList.toggle("hidden", state !== "error");
 }
 
 function hide2FAModal() {
   modalOverlay.classList.add("hidden");
+  twoFaInProgress = false;
 }
 
-document.getElementById("twofa-cancel-btn").addEventListener("click", hide2FAModal);
+async function show2FAModal() {
+  if (twoFaInProgress) return;
+  twoFaInProgress = true;
+
+  twofaInput.value = "";
+  set2FAState("sending");
+  modalOverlay.classList.remove("hidden");
+
+  try {
+    await invoke("request_2fa_code");
+    set2FAState("enter");
+    setTimeout(() => twofaInput.focus(), 100);
+  } catch (err) {
+    document.getElementById("twofa-error-msg").textContent =
+      `Could not send verification code: ${err}`;
+    set2FAState("error");
+  }
+}
+
+// Cancel from "sending" state
+document.getElementById("twofa-cancel-btn").addEventListener("click", () => {
+  hide2FAModal();
+  appendLog("── 2FA entry cancelled ──");
+  setSyncRunning(false);
+});
+
+// Cancel from "error" state
+document.getElementById("twofa-error-cancel-btn").addEventListener("click", () => {
+  hide2FAModal();
+  appendLog("── 2FA entry cancelled ──");
+  setSyncRunning(false);
+});
+
+// Retry from "error" state — go back to sending
+document.getElementById("twofa-retry-btn").addEventListener("click", async () => {
+  twoFaInProgress = false;
+  set2FAState("sending");
+  try {
+    await invoke("request_2fa_code");
+    set2FAState("enter");
+    setTimeout(() => twofaInput.focus(), 100);
+  } catch (err) {
+    document.getElementById("twofa-error-msg").textContent =
+      `Could not send verification code: ${err}`;
+    set2FAState("error");
+  }
+  twoFaInProgress = true;
+});
+
+// Cancel from "enter" state
+document.getElementById("twofa-dismiss-btn").addEventListener("click", () => {
+  hide2FAModal();
+  appendLog("── 2FA entry cancelled ──");
+  setSyncRunning(false);
+});
 
 document.getElementById("twofa-submit-btn").addEventListener("click", async () => {
   const code = twofaInput.value.trim();
@@ -507,8 +567,8 @@ document.getElementById("twofa-submit-btn").addEventListener("click", async () =
   hide2FAModal();
   try {
     await invoke("submit_2fa", { code });
-    appendLog("2FA code submitted.", "success");
-    appendGlobalLog("2FA code submitted.");
+    appendLog("2FA code submitted successfully.", "success");
+    appendGlobalLog("2FA code submitted successfully.");
   } catch (err) {
     appendLog(`2FA submission failed: ${err}`, "err");
     appendGlobalLog(`2FA submission failed: ${err}`);
