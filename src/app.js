@@ -250,6 +250,25 @@ listen("sync-failed", (event) => {
 
 async function doStartSync() {
   if (syncRunning) return;
+
+  // Pre-flight: ensure required settings are configured.
+  try {
+    const cfg = await invoke("get_config");
+    const missing = [];
+    if (!cfg.auth?.username)       missing.push("iCloud Username");
+    if (!cfg.download?.directory)  missing.push("Download Directory");
+    if (missing.length > 0) {
+      const detail = `Please set: ${missing.join(", ")}.`;
+      document.getElementById("settings-required-detail").textContent = " " + detail;
+      document.getElementById("settings-required-notice").classList.remove("hidden");
+      showView("settings");
+      return;
+    }
+  } catch {
+    // If we can't read config, let kei surface the error itself.
+  }
+
+  document.getElementById("adp-warning").classList.add("hidden");
   setSyncRunning(true);
   syncLog.textContent = "";
   syncLogCompact.innerHTML = '<span class="log-compact-placeholder">—</span>';
@@ -274,10 +293,12 @@ stopBtn.addEventListener("click", async () => {
   }
 });
 
-document.getElementById("clear-log-btn").addEventListener("click", () => {
-  syncLog.textContent = "";
-  syncLogCompact.innerHTML = '<span class="log-compact-placeholder">—</span>';
-  resetSyncDedup();
+document.getElementById("adp-dismiss-btn").addEventListener("click", () => {
+  document.getElementById("adp-warning").classList.add("hidden");
+});
+
+listen("sync-adp-detected", () => {
+  document.getElementById("adp-warning").classList.remove("hidden");
 });
 
 // ---------------------------------------------------------------------------
@@ -405,6 +426,7 @@ document.getElementById("settings-form").addEventListener("submit", async (e) =>
 
   try {
     await invoke("save_config", { config });
+    document.getElementById("settings-required-notice").classList.add("hidden");
     const msg = document.getElementById("settings-saved-msg");
     msg.classList.remove("hidden");
     setTimeout(() => msg.classList.add("hidden"), 2500);

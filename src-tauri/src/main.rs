@@ -304,6 +304,22 @@ async fn get_history() -> Result<Vec<SyncRun>, String> {
     .map_err(|e| e.to_string())?
 }
 
+/// Detect whether a line indicates kei is blocked by Advanced Data Protection.
+/// Matches the patterns documented on the kei Authentication wiki page:
+///   https://github.com/rhoopr/kei/wiki/Authentication#how-it-looks-when-adp-blocks-kei
+fn is_adp_error(line: &str) -> bool {
+    let lower = line.to_lowercase();
+    lower.contains("zone_not_found")
+        || lower.contains("private db access disabled")
+        || lower.contains("advanced data protection")
+        || lower.contains("icdpenabled")
+        // ACCESS_DENIED / AUTHENTICATION_FAILED from CloudKit (not generic auth errors)
+        || (lower.contains("access_denied") && (lower.contains("cloudkit") || lower.contains("zone")))
+        || (lower.contains("authentication_failed") && (lower.contains("cloudkit") || lower.contains("zone")))
+        // HTTP-level errors that indicate ADP blocking
+        || (lower.contains("421") && lower.contains("misdirected"))
+}
+
 /// Detect whether a raw output line looks like an interactive password prompt.
 /// Matches lines that are short, end with ":", and mention "password" —
 /// while excluding structured tracing log lines (which have ISO timestamps).
@@ -390,6 +406,9 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
                             } else if is_password_prompt(&l) {
                                 let _ = app_handle.emit("sync-password-required", &l);
                             }
+                            if is_adp_error(&l) {
+                                let _ = app_handle.emit("sync-adp-detected", &l);
+                            }
                             let _ = app_handle.emit("sync-output", &l);
                         }
                         Ok(None) => break,
@@ -404,6 +423,9 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
                         Ok(Some(l)) => {
                             if is_password_prompt(&l) {
                                 let _ = app_handle.emit("sync-password-required", &l);
+                            }
+                            if is_adp_error(&l) {
+                                let _ = app_handle.emit("sync-adp-detected", &l);
                             }
                             let _ = app_handle.emit("sync-output", format!("[err] {l}"));
                         }

@@ -94,11 +94,16 @@
         <div id="progress-bar-wrap" class="hidden">
           <div id="progress-bar-inner"></div>
         </div>
+        <div id="adp-warning" class="notice notice--warn hidden">
+          <strong>Advanced Data Protection detected.</strong>
+          ADP encrypts iCloud data in a way that blocks kei. To fix:
+          <ol>
+            <li>Disable <strong>Advanced Data Protection</strong> in Settings → [your name] → iCloud.</li>
+            <li>Enable <strong>Access iCloud Data on the Web</strong> in the same menu.</li>
+          </ol>
+          <button type="button" class="notice-dismiss" id="adp-dismiss-btn">Dismiss</button>
+        </div>
         <div class="section-card log-card">
-          <div class="log-toolbar">
-            <span class="log-title">Output</span>
-            <button type="button" class="btn-ghost" id="clear-log-btn">Clear</button>
-          </div>
           <div id="sync-log-compact"><span class="log-compact-placeholder">—</span></div>
           <div id="sync-log" class="hidden"></div>
           <button type="button" id="log-expand-btn" title="Toggle full log">
@@ -133,6 +138,10 @@
       <!-- ── Settings ─────────────────────────────────────────────── -->
       <section id="view-settings" class="view">
         <h1 class="view-title">Settings</h1>
+        <div id="settings-required-notice" class="notice notice--warn hidden">
+          <strong>Settings required before syncing.</strong>
+          <span id="settings-required-detail"></span>
+        </div>
         <form id="settings-form">
           <div class="settings-group">
             <h2 class="settings-group-title">Account</h2>
