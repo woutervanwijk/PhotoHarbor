@@ -270,6 +270,7 @@ async function doStartSync() {
   }
 
   document.getElementById("adp-warning").classList.add("hidden");
+  hide2FAModal();
   setSyncRunning(true);
   syncLog.textContent = "";
   syncLogCompact.innerHTML = '<span class="log-compact-placeholder">—</span>';
@@ -488,78 +489,26 @@ listen("sync-password-required", () => showPasswordModal());
 
 const modalOverlay = document.getElementById("modal-overlay");
 const twofaInput = document.getElementById("twofa-input");
-const twofaStateSending = document.getElementById("twofa-state-sending");
-const twofaStateEnter = document.getElementById("twofa-state-enter");
-const twofaStateError = document.getElementById("twofa-state-error");
-
-let twoFaInProgress = false;
-
-function set2FAState(state) {
-  twofaStateSending.classList.toggle("hidden", state !== "sending");
-  twofaStateEnter.classList.toggle("hidden", state !== "enter");
-  twofaStateError.classList.toggle("hidden", state !== "error");
-}
 
 function hide2FAModal() {
   modalOverlay.classList.add("hidden");
-  twoFaInProgress = false;
 }
 
-async function show2FAModal() {
-  if (twoFaInProgress) return;
-  twoFaInProgress = true;
+async function cancelAndStopSync() {
+  hide2FAModal();
+  appendLog("── 2FA entry cancelled, stopping sync ──");
+  setSyncRunning(false);
+  try { await invoke("stop_sync"); } catch {}
+  try { await invoke("clear_kei_session"); } catch {}
+}
 
+function show2FAModal() {
   twofaInput.value = "";
-  set2FAState("sending");
   modalOverlay.classList.remove("hidden");
-
-  try {
-    await invoke("request_2fa_code");
-    set2FAState("enter");
-    setTimeout(() => twofaInput.focus(), 100);
-  } catch (err) {
-    document.getElementById("twofa-error-msg").textContent =
-      `Could not send verification code: ${err}`;
-    set2FAState("error");
-  }
+  setTimeout(() => twofaInput.focus(), 100);
 }
 
-// Cancel from "sending" state
-document.getElementById("twofa-cancel-btn").addEventListener("click", () => {
-  hide2FAModal();
-  appendLog("── 2FA entry cancelled ──");
-  setSyncRunning(false);
-});
-
-// Cancel from "error" state
-document.getElementById("twofa-error-cancel-btn").addEventListener("click", () => {
-  hide2FAModal();
-  appendLog("── 2FA entry cancelled ──");
-  setSyncRunning(false);
-});
-
-// Retry from "error" state — go back to sending
-document.getElementById("twofa-retry-btn").addEventListener("click", async () => {
-  twoFaInProgress = false;
-  set2FAState("sending");
-  try {
-    await invoke("request_2fa_code");
-    set2FAState("enter");
-    setTimeout(() => twofaInput.focus(), 100);
-  } catch (err) {
-    document.getElementById("twofa-error-msg").textContent =
-      `Could not send verification code: ${err}`;
-    set2FAState("error");
-  }
-  twoFaInProgress = true;
-});
-
-// Cancel from "enter" state
-document.getElementById("twofa-dismiss-btn").addEventListener("click", () => {
-  hide2FAModal();
-  appendLog("── 2FA entry cancelled ──");
-  setSyncRunning(false);
-});
+document.getElementById("twofa-dismiss-btn").addEventListener("click", cancelAndStopSync);
 
 document.getElementById("twofa-submit-btn").addEventListener("click", async () => {
   const code = twofaInput.value.trim();

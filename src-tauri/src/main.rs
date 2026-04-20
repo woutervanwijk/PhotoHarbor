@@ -307,17 +307,17 @@ async fn get_history() -> Result<Vec<SyncRun>, String> {
 /// Detect whether a line indicates kei is blocked by Advanced Data Protection.
 /// Matches the patterns documented on the kei Authentication wiki page:
 ///   https://github.com/rhoopr/kei/wiki/Authentication#how-it-looks-when-adp-blocks-kei
+///
+/// Intentionally does NOT include bare ZONE_NOT_FOUND or ACCESS_DENIED — those
+/// can appear transiently during the normal 2FA auth flow and cause false positives.
 fn is_adp_error(line: &str) -> bool {
     let lower = line.to_lowercase();
-    lower.contains("zone_not_found")
-        || lower.contains("private db access disabled")
+    // These strings are specific to ADP blocking kei.
+    // 421 Misdirected Request is intentionally excluded — it can appear as a
+    // transient routing error during normal authentication and causes false positives.
+    lower.contains("private db access disabled")
         || lower.contains("advanced data protection")
         || lower.contains("icdpenabled")
-        // ACCESS_DENIED / AUTHENTICATION_FAILED from CloudKit (not generic auth errors)
-        || (lower.contains("access_denied") && (lower.contains("cloudkit") || lower.contains("zone")))
-        || (lower.contains("authentication_failed") && (lower.contains("cloudkit") || lower.contains("zone")))
-        // HTTP-level errors that indicate ADP blocking
-        || (lower.contains("421") && lower.contains("misdirected"))
 }
 
 /// Detect whether a raw output line looks like an interactive password prompt.
@@ -398,10 +398,11 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
                 line = stdout_lines.next_line() => {
                     match line {
                         Ok(Some(l)) => {
-                            let is_2fa = l.contains("2FA code requested")
-                                || l.contains("2fa_required")
-                                || l.contains("get-code")
-                                || l.contains("submit-code");
+                            let ll = l.to_lowercase();
+                            let is_2fa = ll.contains("waiting for 2fa")
+                                || ll.contains("2fa code requested")
+                                || ll.contains("2fa_required")
+                                || ll.contains("get-code");
                             if is_2fa {
                                 let _ = app_handle.emit("sync-2fa-required", &l);
                             } else if is_password_prompt(&l) {
@@ -422,7 +423,15 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
                 line = stderr_lines.next_line() => {
                     match line {
                         Ok(Some(l)) => {
-                            if is_password_prompt(&l) {
+                            // kei writes tracing logs (including 2FA prompts) to stderr.
+                            let ll = l.to_lowercase();
+                            let is_2fa = ll.contains("waiting for 2fa")
+                                || ll.contains("2fa code requested")
+                                || ll.contains("2fa_required")
+                                || ll.contains("get-code");
+                            if is_2fa {
+                                let _ = app_handle.emit("sync-2fa-required", &l);
+                            } else if is_password_prompt(&l) {
                                 let _ = app_handle.emit("sync-password-required", &l);
                             }
                             if is_adp_error(&l) {
@@ -439,6 +448,17 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
 
         // Drain stderr after stdout closes.
         while let Ok(Some(l)) = stderr_lines.next_line().await {
+            let ll = l.to_lowercase();
+            let is_2fa = ll.contains("waiting for 2fa")
+                || ll.contains("2fa code requested")
+                || ll.contains("2fa_required")
+                || ll.contains("get-code");
+            if is_2fa {
+                let _ = app_handle.emit("sync-2fa-required", &l);
+            }
+            if is_adp_error(&l) {
+                let _ = app_handle.emit("sync-adp-detected", &l);
+            }
             let _ = app_handle.emit("sync-output", format!("[err] {l}"));
         }
 
@@ -505,13 +525,17 @@ async fn request_2fa_code() -> Result<(), String> {
     if output.status.success() {
         Ok(())
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        Err(format!(
-            "kei login get-code failed: {}{}",
-            stderr.trim(),
-            stdout.trim()
-        ))
+        // Extract only the last non-empty line from stderr/stdout as a short message.
+        let combined = [output.stderr.as_slice(), output.stdout.as_slice()].concat();
+        let raw = String::from_utf8_lossy(&combined);
+        let last_line = raw
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .last()
+            .unwrap_or("unknown error")
+            .trim()
+            .to_string();
+        Err(format!("kei login get-code failed: {last_line}"))
     }
 }
 
@@ -537,6 +561,55 @@ async fn submit_2fa(code: String) -> Result<(), String> {
         let stderr = String::from_utf8_lossy(&output.stderr);
         Err(format!("kei login submit-code failed: {stderr}"))
     }
+}
+
+/// Delete kei session/cookie files for the configured user so the next sync
+/// starts a fresh login. The .db (download history) is intentionally kept.
+#[tauri::command]
+async fn clear_kei_session() -> Result<(), String> {
+    let config = get_config().await.unwrap_or_default();
+    let username = config
+        .auth
+        .as_ref()
+        .and_then(|a| a.username.clone())
+        .unwrap_or_default();
+
+    let cookies_dir = kei_config_dir()?.join("cookies");
+
+    // Build the sanitised stem kei uses for its files.
+    let stem: String = if username.is_empty() {
+        // No username — delete all session/cookie files in the cookies dir.
+        String::new()
+    } else {
+        username
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '-')
+            .collect()
+    };
+
+    // Extensions (and no-extension base file) that hold auth state.
+    // The .db file is intentionally excluded — it holds download history.
+    let auth_extensions: &[Option<&str>] = &[
+        None,              // bare cookies file (no extension)
+        Some("session"),
+    ];
+
+    if let Ok(rd) = std::fs::read_dir(&cookies_dir) {
+        for entry in rd.flatten() {
+            let p = entry.path();
+            let file_stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            let ext = p.extension().and_then(|s| s.to_str());
+
+            let stem_matches = stem.is_empty() || file_stem == stem;
+            let ext_matches = auth_extensions.contains(&ext);
+
+            if stem_matches && ext_matches {
+                let _ = std::fs::remove_file(&p);
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Resolve the kei binary path.
@@ -663,6 +736,7 @@ fn main() {
             submit_password,
             request_2fa_code,
             submit_2fa,
+            clear_kei_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Kei PhotoSync");

@@ -20,7 +20,21 @@
       "Bash(curl -s \"https://github.com/rhoopr/kei/wiki/Authentication\")",
       "Bash(python3 -c \"import sys,re; content=sys.stdin.read\\(\\); body=re.search\\(r'<div class=\\\\\"markdown-body[^\\\\\"]*\\\\\">\\(.*?\\)</div>', content, re.DOTALL\\); print\\(body.group\\(1\\) if body else content[:3000]\\)\")",
       "Bash(kei login *)",
-      "Bash(kei sync *)"
+      "Bash(kei sync *)",
+      "Bash(kei --version)",
+      "Bash(cargo install *)",
+      "Bash(curl -s https://api.github.com/repos/rhoopr/kei/releases/latest)",
+      "Bash(python3 -c \"import sys,json; r=json.load\\(sys.stdin\\); print\\(r['tag_name']\\); [print\\(a['name'], a['browser_download_url']\\) for a in r['assets']]\")",
+      "Bash(curl -L https://github.com/rhoopr/kei/releases/download/v0.9.2/kei-macos-aarch64.tar.gz)",
+      "Bash(tar -xz -C /tmp)",
+      "Bash(mv /tmp/kei ~/.cargo/bin/kei)",
+      "Bash(curl -sL https://github.com/rhoopr/kei/releases/download/v0.9.2/kei-macos-aarch64.tar.gz)",
+      "Bash(tar -tzf -)",
+      "Bash(brew upgrade *)",
+      "Bash(kei logout *)"
+    ],
+    "additionalDirectories": [
+      "/private/tmp/kei-update"
     ]
   }
 }
