@@ -329,13 +329,29 @@ fn is_lock_error(line: &str) -> bool {
 /// Run `kei list albums` and return the album names.
 /// Returns an error if kei is not authenticated or the command fails.
 #[tauri::command]
-async fn list_kei_albums() -> Result<Vec<String>, String> {
+async fn list_kei_albums(app: AppHandle) -> Result<Vec<String>, String> {
     let kei_bin = which_kei()?;
+    emit_log(&app, vec![format!("$ {} list albums", kei_bin)]);
+
     let output = Command::new(&kei_bin)
         .args(["list", "albums"])
         .output()
         .await
         .map_err(|e| format!("Failed to run kei list albums: {e}"))?;
+
+    // Emit all stdout + stderr to the global log.
+    let mut log_lines: Vec<String> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.to_string())
+        .collect();
+    log_lines.extend(
+        String::from_utf8_lossy(&output.stderr)
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| format!("[err] {l}")),
+    );
+    emit_log(&app, log_lines);
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -377,6 +393,15 @@ fn is_session_error(line: &str) -> bool {
     let lower = line.to_lowercase();
     lower.contains("http_421")
         || (lower.contains("421") && lower.contains("misdirected") && lower.contains("service error"))
+}
+
+/// Emit a batch of log lines to the frontend via the shared `sync-output-batch` event.
+/// All kei command output (sync, list-albums, submit-2fa, etc.) goes through this so
+/// the global log panel receives everything.
+fn emit_log(app: &AppHandle, lines: Vec<String>) {
+    if !lines.is_empty() {
+        let _ = app.emit("sync-output-batch", &lines);
+    }
 }
 
 /// Detect whether a raw output line looks like an interactive password prompt.
@@ -423,6 +448,8 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
 
     // Resolve the kei binary (prefer PATH, fall back to common install locations).
     let kei_bin = which_kei()?;
+
+    emit_log(&app, vec![format!("$ {} sync", kei_bin)]);
 
     let mut child = Command::new(&kei_bin)
         .arg("sync")
@@ -632,13 +659,28 @@ async fn submit_password(password: String, state: State<'_, AppState>) -> Result
 /// Trigger kei to push a 2FA code to the user's trusted Apple devices.
 /// This runs `kei login get-code` as a separate process and waits for it.
 #[tauri::command]
-async fn request_2fa_code() -> Result<(), String> {
+async fn request_2fa_code(app: AppHandle) -> Result<(), String> {
     let kei_bin = which_kei()?;
+    emit_log(&app, vec![format!("$ {} login get-code", kei_bin)]);
+
     let output = Command::new(&kei_bin)
         .args(["login", "get-code"])
         .output()
         .await
         .map_err(|e| format!("Failed to run kei login get-code: {e}"))?;
+
+    let mut log_lines: Vec<String> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.to_string())
+        .collect();
+    log_lines.extend(
+        String::from_utf8_lossy(&output.stderr)
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| format!("[err] {l}")),
+    );
+    emit_log(&app, log_lines);
 
     if output.status.success() {
         Ok(())
@@ -660,18 +702,34 @@ async fn request_2fa_code() -> Result<(), String> {
 /// The 2FA flow in kei is handled by running `kei login submit-code <CODE>`
 /// as a separate command — not by writing to the running process's stdin.
 #[tauri::command]
-async fn submit_2fa(code: String) -> Result<(), String> {
+async fn submit_2fa(app: AppHandle, code: String) -> Result<(), String> {
     let kei_bin = which_kei()?;
     let trimmed = code.trim().to_string();
     if trimmed.is_empty() {
         return Err("Code is empty".to_string());
     }
 
+    // Log with masked code so credentials don't appear in the output panel.
+    emit_log(&app, vec![format!("$ {} login submit-code ******", kei_bin)]);
+
     let output = Command::new(&kei_bin)
         .args(["login", "submit-code", &trimmed])
         .output()
         .await
         .map_err(|e| format!("Failed to run kei login submit-code: {e}"))?;
+
+    let mut log_lines: Vec<String> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.to_string())
+        .collect();
+    log_lines.extend(
+        String::from_utf8_lossy(&output.stderr)
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| format!("[err] {l}")),
+    );
+    emit_log(&app, log_lines);
 
     if output.status.success() {
         Ok(())
