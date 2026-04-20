@@ -330,7 +330,7 @@ fn is_lock_error(line: &str) -> bool {
 /// Returns an error if kei is not authenticated or the command fails.
 #[tauri::command]
 async fn list_kei_albums(app: AppHandle) -> Result<Vec<String>, String> {
-    let kei_bin = which_kei()?;
+    let kei_bin = resolve_kei_bin().await?;
     emit_log(&app, vec![format!("$ {} list albums", kei_bin)]);
 
     let output = Command::new(&kei_bin)
@@ -447,7 +447,7 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
     }
 
     // Resolve the kei binary (prefer PATH, fall back to common install locations).
-    let kei_bin = which_kei()?;
+    let kei_bin = resolve_kei_bin().await?;
 
     emit_log(&app, vec![format!("$ {} sync", kei_bin)]);
 
@@ -660,7 +660,7 @@ async fn submit_password(password: String, state: State<'_, AppState>) -> Result
 /// This runs `kei login get-code` as a separate process and waits for it.
 #[tauri::command]
 async fn request_2fa_code(app: AppHandle) -> Result<(), String> {
-    let kei_bin = which_kei()?;
+    let kei_bin = resolve_kei_bin().await?;
     emit_log(&app, vec![format!("$ {} login get-code", kei_bin)]);
 
     let output = Command::new(&kei_bin)
@@ -703,7 +703,7 @@ async fn request_2fa_code(app: AppHandle) -> Result<(), String> {
 /// as a separate command — not by writing to the running process's stdin.
 #[tauri::command]
 async fn submit_2fa(app: AppHandle, code: String) -> Result<(), String> {
-    let kei_bin = which_kei()?;
+    let kei_bin = resolve_kei_bin().await?;
     let trimmed = code.trim().to_string();
     if trimmed.is_empty() {
         return Err("Code is empty".to_string());
@@ -788,85 +788,155 @@ async fn clear_kei_session() -> Result<(), String> {
     Ok(())
 }
 
-/// Resolve the kei binary path.
-/// Resolution order:
-///   1. Bundled sidecar (next to the app executable — always present in a
-///      packaged build)
-///   2. $KEI_BIN env override (useful during development)
-///   3. Common cargo / Homebrew / system install locations
-///   4. PATH via `which` (Unix) / `where` (Windows)
-fn which_kei() -> Result<String, String> {
-    // The binary is named "kei" on Unix and "kei.exe" on Windows.
+// ---------------------------------------------------------------------------
+// App settings (UI-only, separate from kei's config.toml)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+pub struct AppSettings {
+    pub use_system_kei: Option<bool>,
+}
+
+fn app_settings_path() -> Result<std::path::PathBuf, String> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| "HOME not set".to_string())?;
+    Ok(std::path::PathBuf::from(home)
+        .join(".config")
+        .join("kei-photosync")
+        .join("settings.toml"))
+}
+
+#[tauri::command]
+async fn get_app_settings() -> Result<AppSettings, String> {
+    let path = app_settings_path()?;
+    if !path.exists() {
+        return Ok(AppSettings::default());
+    }
+    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    toml::from_str(&content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn save_app_settings(settings: AppSettings) -> Result<(), String> {
+    let path = app_settings_path()?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let content = toml::to_string_pretty(&settings).map_err(|e| e.to_string())?;
+    std::fs::write(&path, content).map_err(|e| e.to_string())
+}
+
+// ---------------------------------------------------------------------------
+// kei binary resolution
+// ---------------------------------------------------------------------------
+
+/// Returns the bundled kei sidecar path if it exists next to the app executable.
+fn find_bundled_kei() -> Option<String> {
     #[cfg(target_os = "windows")]
     let bin_name = "kei.exe";
     #[cfg(not(target_os = "windows"))]
     let bin_name = "kei";
 
-    // 1. Bundled sidecar — Tauri places externalBin entries alongside the
-    //    main executable in both packaged apps and `tauri dev` mode.
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let sidecar = dir.join(bin_name);
-            if sidecar.exists() {
-                return Ok(sidecar.to_string_lossy().to_string());
-            }
-        }
+    let exe = std::env::current_exe().ok()?;
+    let sidecar = exe.parent()?.join(bin_name);
+    if sidecar.exists() {
+        Some(sidecar.to_string_lossy().to_string())
+    } else {
+        None
     }
+}
 
-    // 2. $KEI_BIN env override
+/// Returns a system-installed kei binary using the same PATH resolution as
+/// the user's terminal. On macOS/Linux we invoke a login shell so that
+/// profile-based PATH additions (Homebrew, Cargo, etc.) are honoured.
+fn find_system_kei() -> Option<String> {
+    // $KEI_BIN env override — highest priority.
     if let Ok(v) = std::env::var("KEI_BIN") {
         if std::path::Path::new(&v).exists() {
-            return Ok(v);
+            return Some(v);
         }
     }
 
-    // 3. Common install locations
-    // HOME on Unix; USERPROFILE on Windows (cargo installs there)
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_default();
-
+    // Resolve via the user's login shell so we get the same PATH as the terminal.
     #[cfg(target_os = "windows")]
-    let candidates: &[String] = &[
-        format!("{home}\\.cargo\\bin\\kei.exe"),
-    ];
-    #[cfg(not(target_os = "windows"))]
-    let candidates: &[String] = &[
-        format!("{home}/.cargo/bin/kei"),
-        "/usr/local/bin/kei".to_string(),
-        "/opt/homebrew/bin/kei".to_string(),
-        "/usr/bin/kei".to_string(),
-    ];
-    for c in candidates {
-        if std::path::Path::new(c.as_str()).exists() {
-            return Ok(c.clone());
-        }
-    }
+    let output = std::process::Command::new("where").arg("kei").output();
 
-    // 4. PATH lookup: `which` on Unix, `where` on Windows
-    #[cfg(target_os = "windows")]
-    let lookup_cmd = "where";
-    #[cfg(not(target_os = "windows"))]
-    let lookup_cmd = "which";
+    #[cfg(target_os = "macos")]
+    let output = std::process::Command::new("/bin/zsh")
+        .args(["-l", "-c", "which kei"])
+        .output();
 
-    let out = std::process::Command::new(lookup_cmd)
-        .arg("kei")
-        .output()
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    let output = std::process::Command::new("/bin/bash")
+        .args(["-l", "-c", "which kei"])
+        .output();
+
+    output
         .ok()
         .filter(|o| o.status.success())
         .and_then(|o| {
-            // `where` on Windows may return multiple lines; take the first.
             let s = String::from_utf8_lossy(&o.stdout);
+            // `where` on Windows / `which` may return multiple lines; take the first.
             s.lines().next().map(|l| l.trim().to_string())
-        });
+        })
+        .filter(|s| !s.is_empty())
+        .filter(|s| std::path::Path::new(s.as_str()).exists())
+}
 
-    out.filter(|s| !s.is_empty())
-        .ok_or_else(|| "kei binary not found".to_string())
+/// Resolve which kei binary to use, respecting the use_system_kei setting.
+async fn resolve_kei_bin() -> Result<String, String> {
+    let settings = get_app_settings().await.unwrap_or_default();
+    if settings.use_system_kei.unwrap_or(false) {
+        find_system_kei().ok_or_else(|| "System kei not found in PATH or common locations".to_string())
+    } else {
+        find_bundled_kei()
+            .or_else(find_system_kei)
+            .ok_or_else(|| "kei binary not found".to_string())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// kei version info
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+pub struct KeiVersions {
+    pub bundled_path: Option<String>,
+    pub bundled_version: Option<String>,
+    pub system_path: Option<String>,
+    pub system_version: Option<String>,
+}
+
+async fn kei_version(path: &str) -> Option<String> {
+    let out = Command::new(path).arg("--version").output().await.ok()?;
+    let s = String::from_utf8_lossy(&out.stdout);
+    let v = s.trim().to_string();
+    if v.is_empty() { None } else { Some(v) }
+}
+
+#[tauri::command]
+async fn get_kei_versions() -> KeiVersions {
+    let bundled_path = find_bundled_kei();
+    let system_path = find_system_kei();
+
+    let bundled_version = if let Some(ref p) = bundled_path {
+        kei_version(p).await
+    } else {
+        None
+    };
+    let system_version = if let Some(ref p) = system_path {
+        kei_version(p).await
+    } else {
+        None
+    };
+
+    KeiVersions { bundled_path, bundled_version, system_path, system_version }
 }
 
 #[tauri::command]
 async fn check_kei() -> Result<String, String> {
-    which_kei()
+    resolve_kei_bin().await
 }
 
 #[tauri::command]
@@ -905,6 +975,9 @@ fn main() {
             open_url,
             get_config,
             save_config,
+            get_app_settings,
+            save_app_settings,
+            get_kei_versions,
             get_status,
             get_history,
             start_sync,

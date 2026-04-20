@@ -790,6 +790,36 @@ html, body {
   font-weight: 500;
 }
 
+.kei-versions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kei-version-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.kei-version-label {
+  width: 60px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.kei-version-value {
+  font-weight: 500;
+  min-width: 80px;
+}
+
+.kei-version-path {
+  color: var(--text-muted);
+  font-size: 11px;
+  word-break: break-all;
+}
+
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
 
 .btn-primary {

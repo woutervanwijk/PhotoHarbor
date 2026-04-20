@@ -516,7 +516,10 @@ document.getElementById("cfg-exclude-albums-refresh").addEventListener("click", 
 
 async function loadSettings() {
   try {
-    const cfg = await invoke("get_config");
+    const [cfg, appSettings] = await Promise.all([
+      invoke("get_config"),
+      invoke("get_app_settings"),
+    ]);
 
     document.getElementById("cfg-username").value = cfg.auth?.username ?? "";
     document.getElementById("cfg-domain").value = cfg.auth?.domain ?? "com";
@@ -537,8 +540,28 @@ async function loadSettings() {
     document.getElementById("cfg-recent").value = cfg.filters?.recent ?? "";
     document.getElementById("cfg-watch-interval").value = cfg.watch?.interval ?? "";
     document.getElementById("cfg-log-level").value = cfg.log_level ?? "";
+
+    const useSystem = appSettings.use_system_kei ?? false;
+    document.getElementById("cfg-use-system-kei").checked = useSystem;
+    document.getElementById("system-kei-warning").classList.toggle("hidden", !useSystem);
   } catch (err) {
     console.error("get_config error:", err);
+  }
+
+  // Load kei versions async — doesn't block the rest of settings rendering.
+  loadKeiVersions();
+}
+
+async function loadKeiVersions() {
+  try {
+    const v = await invoke("get_kei_versions");
+    document.getElementById("kei-version-bundled").textContent = v.bundled_version ?? "not found";
+    document.getElementById("kei-path-bundled").textContent = v.bundled_path ?? "";
+    document.getElementById("kei-version-system").textContent = v.system_version ?? "not found";
+    document.getElementById("kei-path-system").textContent = v.system_path ?? "";
+  } catch {
+    document.getElementById("kei-version-bundled").textContent = "—";
+    document.getElementById("kei-version-system").textContent = "—";
   }
 }
 
@@ -552,6 +575,10 @@ function parseAlbums(val) {
 
 document.getElementById("cfg-albums-all").addEventListener("change", (e) => {
   document.getElementById("cfg-albums-row").classList.toggle("hidden", e.target.checked);
+});
+
+document.getElementById("cfg-use-system-kei").addEventListener("change", (e) => {
+  document.getElementById("system-kei-warning").classList.toggle("hidden", !e.target.checked);
 });
 
 document.getElementById("cfg-directory-pick").addEventListener("click", async () => {
@@ -580,6 +607,7 @@ document.getElementById("settings-form").addEventListener("submit", async (e) =>
   const recent = parseInt(document.getElementById("cfg-recent").value, 10);
   const watchInterval = parseInt(document.getElementById("cfg-watch-interval").value, 10);
   const logLevel = document.getElementById("cfg-log-level").value || null;
+  const useSystemKei = document.getElementById("cfg-use-system-kei").checked;
 
   const config = {
     log_level: logLevel,
@@ -606,7 +634,10 @@ document.getElementById("settings-form").addEventListener("submit", async (e) =>
   };
 
   try {
-    await invoke("save_config", { config });
+    await Promise.all([
+      invoke("save_config", { config }),
+      invoke("save_app_settings", { settings: { use_system_kei: useSystemKei } }),
+    ]);
     document.getElementById("settings-required-notice").classList.add("hidden");
     const msg = document.getElementById("settings-saved-msg");
     msg.classList.remove("hidden");

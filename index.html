@@ -250,6 +250,29 @@
             </div>
           </div>
 
+          <div class="settings-group">
+            <h2 class="settings-group-title">kei Engine</h2>
+            <div class="kei-versions">
+              <div class="kei-version-row">
+                <span class="kei-version-label">Bundled</span>
+                <span class="kei-version-value" id="kei-version-bundled">—</span>
+                <span class="kei-version-path" id="kei-path-bundled"></span>
+              </div>
+              <div class="kei-version-row">
+                <span class="kei-version-label">System</span>
+                <span class="kei-version-value" id="kei-version-system">—</span>
+                <span class="kei-version-path" id="kei-path-system"></span>
+              </div>
+            </div>
+            <div class="form-row" style="margin-top:12px">
+              <label for="cfg-use-system-kei">Use system kei</label>
+              <input type="checkbox" id="cfg-use-system-kei" />
+            </div>
+            <div id="system-kei-warning" class="notice notice--warn hidden">
+              Using a system-installed kei may cause issues if its version differs from the bundled one. Sync behaviour, command flags, and output formats can change between releases.
+            </div>
+          </div>
+
           <div class="form-actions">
             <button type="submit" class="btn-primary">Save Settings</button>
             <span id="settings-saved-msg" class="saved-msg hidden">Saved!</span>
