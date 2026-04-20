@@ -530,8 +530,10 @@ async function loadSettings() {
     document.getElementById("cfg-skip-videos").checked = cfg.filters?.skip_videos ?? false;
     document.getElementById("cfg-skip-photos").checked = cfg.filters?.skip_photos ?? false;
 
+    // "All Albums" is stored in AppSettings (not kei's TOML) because kei
+    // treats albums=["all"] as a literal album name instead of the -a all flag.
+    const albumsAll = appSettings.all_albums ?? false;
     const albums = cfg.filters?.albums ?? [];
-    const albumsAll = albums.length === 1 && albums[0].toLowerCase() === "all";
     document.getElementById("cfg-albums-all").checked = albumsAll;
     document.getElementById("cfg-albums-row").classList.toggle("hidden", albumsAll);
     if (!albumsAll) loadAlbumPicker(albums);
@@ -602,7 +604,8 @@ document.getElementById("settings-form").addEventListener("submit", async (e) =>
   const skipVideos = document.getElementById("cfg-skip-videos").checked;
   const skipPhotos = document.getElementById("cfg-skip-photos").checked;
   const albumsAll = document.getElementById("cfg-albums-all").checked;
-  const albums = albumsAll ? ["all"] : (getSelectedAlbums().length > 0 ? getSelectedAlbums() : null);
+  // albumsAll is passed as a CLI flag (-a all) by the Rust side; don't write ["all"] to kei's TOML.
+  const albums = albumsAll ? null : (getSelectedAlbums().length > 0 ? getSelectedAlbums() : null);
   const excludeAlbums = getExcludeAlbums().length > 0 ? getExcludeAlbums() : null;
   const recent = parseInt(document.getElementById("cfg-recent").value, 10);
   const watchInterval = parseInt(document.getElementById("cfg-watch-interval").value, 10);
@@ -636,7 +639,7 @@ document.getElementById("settings-form").addEventListener("submit", async (e) =>
   try {
     await Promise.all([
       invoke("save_config", { config }),
-      invoke("save_app_settings", { settings: { use_system_kei: useSystemKei } }),
+      invoke("save_app_settings", { settings: { use_system_kei: useSystemKei, all_albums: albumsAll } }),
     ]);
     document.getElementById("settings-required-notice").classList.add("hidden");
     const msg = document.getElementById("settings-saved-msg");

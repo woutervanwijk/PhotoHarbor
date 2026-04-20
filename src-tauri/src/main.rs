@@ -448,11 +448,22 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
 
     // Resolve the kei binary (prefer PATH, fall back to common install locations).
     let kei_bin = resolve_kei_bin().await?;
+    let app_settings = get_app_settings().await.unwrap_or_default();
+    let all_albums = app_settings.all_albums.unwrap_or(false);
 
-    emit_log(&app, vec![format!("$ {} sync", kei_bin)]);
+    let cmdline = if all_albums {
+        format!("$ {} sync -a all", kei_bin)
+    } else {
+        format!("$ {} sync", kei_bin)
+    };
+    emit_log(&app, vec![cmdline]);
 
-    let mut child = Command::new(&kei_bin)
-        .arg("sync")
+    let mut cmd = Command::new(&kei_bin);
+    cmd.arg("sync");
+    if all_albums {
+        cmd.args(["-a", "all"]);
+    }
+    let mut child = cmd
         .stdin(Stdio::piped())   // kept open so we can write password/2FA responses
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -795,6 +806,9 @@ async fn clear_kei_session() -> Result<(), String> {
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct AppSettings {
     pub use_system_kei: Option<bool>,
+    /// When true, passes `-a all` to `kei sync` rather than storing ["all"] in
+    /// kei's TOML (which kei interprets as a literal album name and errors).
+    pub all_albums: Option<bool>,
 }
 
 fn app_settings_path() -> Result<std::path::PathBuf, String> {

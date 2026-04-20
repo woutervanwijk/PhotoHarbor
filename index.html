@@ -149,13 +149,6 @@
               <label for="cfg-username">iCloud Username</label>
               <input type="email" id="cfg-username" placeholder="you@icloud.com" />
             </div>
-            <div class="form-row">
-              <label for="cfg-domain">Region</label>
-              <select id="cfg-domain">
-                <option value="com">International</option>
-                <option value="cn">China</option>
-              </select>
-            </div>
             <div class="auth-help">
               <div class="auth-help-row">
                 <span class="auth-help-label">Password</span>
@@ -183,17 +176,9 @@
               </div>
             </div>
             <div class="form-row">
-              <label for="cfg-threads">Concurrent Downloads</label>
-              <input type="number" id="cfg-threads" min="1" max="50" placeholder="10" style="width:80px" />
-            </div>
-            <div class="form-row">
               <label for="cfg-folder-structure">Folder Structure</label>
               <input type="text" id="cfg-folder-structure" placeholder="%Y/%m/%d" />
               <span class="form-hint">strftime format. Use <code>{album}</code> as the first segment for per-album subfolders, e.g. <code>{album}/%Y/%m/%d</code>. Photos not in any album land at the path without the <code>{album}</code> prefix. Leave blank for a flat structure.</span>
-            </div>
-            <div class="form-row">
-              <label for="cfg-exif">Set EXIF datetime</label>
-              <input type="checkbox" id="cfg-exif" />
             </div>
           </div>
 
@@ -228,50 +213,78 @@
             </div>
           </div>
 
-          <div class="settings-group">
-            <h2 class="settings-group-title">Watch Mode</h2>
-            <div class="form-row">
-              <label for="cfg-watch-interval">Interval (seconds)</label>
-              <input type="number" id="cfg-watch-interval" min="60" placeholder="3600" style="width:100px" />
-              <span class="form-hint">Minimum 60 s. Leave blank to disable watch mode.</span>
-            </div>
-          </div>
+          <details class="settings-advanced">
+            <summary class="settings-advanced-summary">Advanced</summary>
 
-          <div class="settings-group">
-            <h2 class="settings-group-title">Logging</h2>
-            <div class="form-row">
-              <label for="cfg-log-level">Log Level</label>
-              <select id="cfg-log-level">
-                <option value="">default</option>
-                <option value="info">info</option>
-                <option value="warn">warn</option>
-                <option value="error">error</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="settings-group">
-            <h2 class="settings-group-title">kei Engine</h2>
-            <div class="kei-versions">
-              <div class="kei-version-row">
-                <span class="kei-version-label">Bundled</span>
-                <span class="kei-version-value" id="kei-version-bundled">—</span>
-                <span class="kei-version-path" id="kei-path-bundled"></span>
-              </div>
-              <div class="kei-version-row">
-                <span class="kei-version-label">System</span>
-                <span class="kei-version-value" id="kei-version-system">—</span>
-                <span class="kei-version-path" id="kei-path-system"></span>
+            <div class="settings-group">
+              <h2 class="settings-group-title">Account</h2>
+              <div class="form-row">
+                <label for="cfg-domain">Region</label>
+                <select id="cfg-domain">
+                  <option value="com" selected>International</option>
+                  <option value="cn">China</option>
+                </select>
               </div>
             </div>
-            <div class="form-row" style="margin-top:12px">
-              <label for="cfg-use-system-kei">Use system kei</label>
-              <input type="checkbox" id="cfg-use-system-kei" />
+
+            <div class="settings-group">
+              <h2 class="settings-group-title">Download</h2>
+              <div class="form-row">
+                <label for="cfg-threads">Concurrent Downloads</label>
+                <input type="number" id="cfg-threads" min="1" max="50" placeholder="10" style="width:80px" />
+              </div>
+              <div class="form-row">
+                <label for="cfg-exif">Set EXIF datetime</label>
+                <input type="checkbox" id="cfg-exif" />
+              </div>
             </div>
-            <div id="system-kei-warning" class="notice notice--warn hidden">
-              Using a system-installed kei may cause issues if its version differs from the bundled one. Sync behaviour, command flags, and output formats can change between releases.
+
+            <div class="settings-group">
+              <h2 class="settings-group-title">Watch Mode</h2>
+              <div class="form-row">
+                <label for="cfg-watch-interval">Interval (seconds)</label>
+                <input type="number" id="cfg-watch-interval" min="60" placeholder="3600" style="width:100px" />
+                <span class="form-hint">Minimum 60 s. Leave blank to disable watch mode.</span>
+              </div>
             </div>
-          </div>
+
+            <div class="settings-group">
+              <h2 class="settings-group-title">Logging</h2>
+              <div class="form-row">
+                <label for="cfg-log-level">Log Level</label>
+                <select id="cfg-log-level">
+                  <option value="">default</option>
+                  <option value="info">info</option>
+                  <option value="warn">warn</option>
+                  <option value="error">error</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="settings-group">
+              <h2 class="settings-group-title">kei Engine</h2>
+              <div class="kei-versions">
+                <div class="kei-version-row">
+                  <span class="kei-version-label">Bundled</span>
+                  <span class="kei-version-value" id="kei-version-bundled">—</span>
+                  <span class="kei-version-path" id="kei-path-bundled"></span>
+                </div>
+                <div class="kei-version-row">
+                  <span class="kei-version-label">System</span>
+                  <span class="kei-version-value" id="kei-version-system">—</span>
+                  <span class="kei-version-path" id="kei-path-system"></span>
+                </div>
+              </div>
+              <div class="form-row" style="margin-top:12px">
+                <label for="cfg-use-system-kei">Use system kei</label>
+                <input type="checkbox" id="cfg-use-system-kei" />
+              </div>
+              <div id="system-kei-warning" class="notice notice--warn hidden">
+                Using a system-installed kei may cause issues if its version differs from the bundled one. Sync behaviour, command flags, and output formats can change between releases.
+              </div>
+            </div>
+
+          </details>
 
           <div class="form-actions">
             <button type="submit" class="btn-primary">Save Settings</button>
