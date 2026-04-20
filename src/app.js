@@ -397,13 +397,18 @@ async function loadHistory() {
           statusCell = `<span class="run-ok">Complete</span>`;
         }
 
+        const completed = !!(r.completed_at && !r.interrupted);
+        const failedCell = completed
+          ? (r.assets_failed > 0 ? `<span style="color:var(--destructive)">${fmtNum(r.assets_failed)}</span>` : fmtNum(r.assets_failed))
+          : "—";
+
         return `<tr>
           <td>${r.id}</td>
           <td>${formatTs(r.started_at)}</td>
           <td>${formatDuration(r.started_at, r.completed_at)}</td>
-          <td>${fmtNum(r.assets_seen)}</td>
-          <td>${fmtNum(r.assets_downloaded)}</td>
-          <td>${r.assets_failed > 0 ? `<span style="color:var(--destructive)">${fmtNum(r.assets_failed)}</span>` : fmtNum(r.assets_failed)}</td>
+          <td>${completed ? fmtNum(r.assets_seen) : "—"}</td>
+          <td>${completed ? fmtNum(r.assets_downloaded) : "—"}</td>
+          <td>${failedCell}</td>
           <td>${statusCell}</td>
         </tr>`;
       })
@@ -460,11 +465,26 @@ function _renderChecklist(listEl, textEl, albums, selected) {
   textEl.classList.add("hidden");
 }
 
-async function _loadPicker(listEl, textEl, selected) {
-  try {
-    const albums = await invoke("list_kei_albums");
+// Cache: null = not yet fetched, [] = fetch failed, [...] = album names.
+let _albumCache = null;
+let _albumCachePromise = null;
+
+async function _fetchAlbums(bust) {
+  if (bust) { _albumCache = null; _albumCachePromise = null; }
+  if (_albumCache !== null) return _albumCache;
+  if (!_albumCachePromise) {
+    _albumCachePromise = invoke("list_kei_albums")
+      .then((list) => { _albumCache = list; return list; })
+      .catch(() => { _albumCache = []; _albumCachePromise = null; return null; });
+  }
+  return _albumCachePromise;
+}
+
+async function _loadPicker(listEl, textEl, selected, bust) {
+  const albums = await _fetchAlbums(bust);
+  if (albums && albums.length > 0) {
     _renderChecklist(listEl, textEl, albums, selected);
-  } catch {
+  } else {
     // Not authenticated or kei unavailable — use text input.
     listEl.classList.add("hidden");
     textEl.classList.remove("hidden");
@@ -472,20 +492,22 @@ async function _loadPicker(listEl, textEl, selected) {
   }
 }
 
-function loadAlbumPicker(selected) {
-  return _loadPicker(albumsList, albumsTextInput, selected);
+function loadAlbumPicker(selected, bust) {
+  return _loadPicker(albumsList, albumsTextInput, selected, bust);
 }
 
-function loadExcludeAlbumPicker(selected) {
-  return _loadPicker(excludeAlbumsList, excludeAlbumsTextInput, selected);
+function loadExcludeAlbumPicker(selected, bust) {
+  return _loadPicker(excludeAlbumsList, excludeAlbumsTextInput, selected, bust);
 }
 
 document.getElementById("cfg-albums-refresh").addEventListener("click", () => {
-  loadAlbumPicker(getSelectedAlbums());
+  loadAlbumPicker(getSelectedAlbums(), true);
+  loadExcludeAlbumPicker(getExcludeAlbums(), true);
 });
 
 document.getElementById("cfg-exclude-albums-refresh").addEventListener("click", () => {
-  loadExcludeAlbumPicker(getExcludeAlbums());
+  loadAlbumPicker(getSelectedAlbums(), true);
+  loadExcludeAlbumPicker(getExcludeAlbums(), true);
 });
 
 // ---------------------------------------------------------------------------
@@ -692,6 +714,12 @@ twofaInput.addEventListener("keydown", (e) => {
   } catch {
     document.getElementById("kei-missing-overlay").classList.remove("hidden");
   }
+
+  // Restore sync button state if a sync was already running (e.g. after a Vite reload).
+  try {
+    const status = await invoke("get_status");
+    if (status.is_syncing) setSyncRunning(true);
+  } catch {}
 })();
 
 document.getElementById("copy-install-cmd").addEventListener("click", () => {
