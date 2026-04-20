@@ -389,10 +389,8 @@ async function loadHistory() {
     tbody.innerHTML = runs
       .map((r) => {
         let statusCell;
-        if (r.interrupted) {
+        if (!r.completed_at || r.interrupted) {
           statusCell = `<span class="run-interrupted">Interrupted</span>`;
-        } else if (!r.completed_at) {
-          statusCell = `<span class="run-interrupted">Running?</span>`;
         } else if (r.assets_failed > 0) {
           statusCell = `<span class="run-error">Partial</span>`;
         } else {
