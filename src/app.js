@@ -303,6 +303,11 @@ listen("sync-adp-detected", () => {
   document.getElementById("adp-warning").classList.remove("hidden");
 });
 
+listen("sync-session-reset", () => {
+  appendLog("── Session error detected — login state cleared, next sync will re-authenticate ──");
+  appendGlobalLog("── Session error detected — login state cleared ──");
+});
+
 // ---------------------------------------------------------------------------
 // History view
 // ---------------------------------------------------------------------------

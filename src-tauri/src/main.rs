@@ -320,6 +320,16 @@ fn is_adp_error(line: &str) -> bool {
         || lower.contains("icdpenabled")
 }
 
+/// Detect a 421 Misdirected Request that indicates a corrupt/stale session.
+/// kei 0.9.x surfaces this as "service error (http_421)" — distinct from the
+/// transient retry message ("retrying with fresh connection pool") which kei
+/// recovers from on its own.
+fn is_session_error(line: &str) -> bool {
+    let lower = line.to_lowercase();
+    lower.contains("http_421")
+        || (lower.contains("421") && lower.contains("misdirected") && lower.contains("service error"))
+}
+
 /// Detect whether a raw output line looks like an interactive password prompt.
 /// Matches lines that are short, end with ":", and mention "password" —
 /// while excluding structured tracing log lines (which have ISO timestamps).
@@ -437,6 +447,10 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
                             if is_adp_error(&l) {
                                 let _ = app_handle.emit("sync-adp-detected", &l);
                             }
+                            if is_session_error(&l) {
+                                let _ = clear_kei_session().await;
+                                let _ = app_handle.emit("sync-session-reset", ());
+                            }
                             let _ = app_handle.emit("sync-output", format!("[err] {l}"));
                         }
                         Ok(None) => {}
@@ -458,6 +472,10 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
             }
             if is_adp_error(&l) {
                 let _ = app_handle.emit("sync-adp-detected", &l);
+            }
+            if is_session_error(&l) {
+                let _ = clear_kei_session().await;
+                let _ = app_handle.emit("sync-session-reset", ());
             }
             let _ = app_handle.emit("sync-output", format!("[err] {l}"));
         }
