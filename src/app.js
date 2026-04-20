@@ -532,8 +532,10 @@ async function loadSettings() {
 
     // "All Albums" is stored in AppSettings (not kei's TOML) because kei
     // treats albums=["all"] as a literal album name instead of the -a all flag.
-    const albumsAll = appSettings.all_albums ?? false;
-    const albums = cfg.filters?.albums ?? [];
+    // Fall back to checking the TOML for legacy configs that still have ["all"].
+    const tomlHasAll = (cfg.filters?.albums ?? []).some((a) => a.toLowerCase() === "all");
+    const albumsAll = (appSettings.all_albums ?? false) || tomlHasAll;
+    const albums = albumsAll ? [] : (cfg.filters?.albums ?? []);
     document.getElementById("cfg-albums-all").checked = albumsAll;
     document.getElementById("cfg-albums-row").classList.toggle("hidden", albumsAll);
     if (!albumsAll) loadAlbumPicker(albums);

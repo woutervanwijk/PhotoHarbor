@@ -373,16 +373,21 @@ async fn list_kei_albums(app: AppHandle) -> Result<Vec<String>, String> {
 }
 
 /// Delete any .lock files in the kei cookies directory.
-async fn delete_kei_lock() {
-    let Ok(base) = kei_config_dir() else { return };
+/// Returns true if at least one lock file was removed.
+async fn delete_kei_lock() -> bool {
+    let Ok(base) = kei_config_dir() else { return false };
     let cookies_dir = base.join("cookies");
+    let mut deleted = false;
     if let Ok(rd) = std::fs::read_dir(&cookies_dir) {
         for entry in rd.flatten() {
             if entry.path().extension().and_then(|e| e.to_str()) == Some("lock") {
-                let _ = std::fs::remove_file(entry.path());
+                if std::fs::remove_file(entry.path()).is_ok() {
+                    deleted = true;
+                }
             }
         }
     }
+    deleted
 }
 
 /// Detect a 421 Misdirected Request that indicates a corrupt/stale session.
@@ -449,20 +454,37 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
     // Resolve the kei binary (prefer PATH, fall back to common install locations).
     let kei_bin = resolve_kei_bin().await?;
     let app_settings = get_app_settings().await.unwrap_or_default();
-    let all_albums = app_settings.all_albums.unwrap_or(false);
 
-    let cmdline = if all_albums {
-        format!("$ {} sync -a all", kei_bin)
-    } else {
-        format!("$ {} sync", kei_bin)
-    };
-    emit_log(&app, vec![cmdline]);
+    // If kei's TOML still has albums=["all"] from a previous save, strip it out
+    // so kei doesn't try to find a literal album named "all".
+    let kei_cfg = get_config().await.unwrap_or_default();
+    let toml_had_all = kei_cfg
+        .filters
+        .as_ref()
+        .and_then(|f| f.albums.as_ref())
+        .is_some_and(|albums| albums.iter().any(|a| a.eq_ignore_ascii_case("all")));
+
+    if toml_had_all {
+        let mut clean = kei_cfg;
+        if let Some(ref mut f) = clean.filters {
+            f.albums = None;
+        }
+        if let (Ok(path), Ok(content)) = (config_path(), toml::to_string_pretty(&clean)) {
+            let _ = std::fs::write(path, content);
+        }
+    }
+
+    // Clear any stale lock file left by a previous hard-quit before launching kei.
+    // This avoids the "Session lock held by another instance" error on restart.
+    if delete_kei_lock().await {
+        emit_log(&app, vec!["── Cleared stale kei lock file ──".to_string()]);
+    }
+
+    // "All Albums" means no -a filter at all — kei syncs everything when -a is omitted.
+    emit_log(&app, vec![format!("$ {} sync", kei_bin)]);
 
     let mut cmd = Command::new(&kei_bin);
     cmd.arg("sync");
-    if all_albums {
-        cmd.args(["-a", "all"]);
-    }
     let mut child = cmd
         .stdin(Stdio::piped())   // kept open so we can write password/2FA responses
         .stdout(Stdio::piped())
@@ -520,7 +542,7 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
                     let _ = app_handle.emit("sync-session-reset", ());
                 }
                 if is_lock_error(&l) {
-                    delete_kei_lock().await;
+                    let _ = delete_kei_lock().await;
                     let _ = app_handle.emit("sync-lock-cleared", ());
                 }
                 // DEBUG / TRACE tracing lines are too noisy to display in the
