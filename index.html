@@ -212,13 +212,15 @@
               <input type="checkbox" id="cfg-albums-all" />
               <span class="form-hint">Sync every user-created album. Apple smart folders (Favorites, Screenshots, etc.) are skipped unless named explicitly below.</span>
             </div>
-            <div class="form-row" id="cfg-albums-row">
-              <label for="cfg-albums">Only These Albums</label>
+            <div class="form-row form-row--top" id="cfg-albums-row">
+              <label>Only These Albums <button type="button" class="btn-ghost btn-inline" id="cfg-albums-refresh" title="Refresh album list">↻</button></label>
+              <div id="cfg-albums-list" class="albums-checklist hidden"></div>
               <input type="text" id="cfg-albums" placeholder="Vacation, Family (comma-separated)" />
             </div>
-            <div class="form-row">
-              <label for="cfg-exclude-albums">Exclude Albums</label>
-              <input type="text" id="cfg-exclude-albums" placeholder="Screenshots, Hidden" />
+            <div class="form-row form-row--top" id="cfg-exclude-albums-row">
+              <label>Exclude Albums <button type="button" class="btn-ghost btn-inline" id="cfg-exclude-albums-refresh" title="Refresh album list">↻</button></label>
+              <div id="cfg-exclude-albums-list" class="albums-checklist hidden"></div>
+              <input type="text" id="cfg-exclude-albums" placeholder="Screenshots, Hidden (comma-separated)" />
             </div>
             <div class="form-row">
               <label for="cfg-recent">Only Most Recent N</label>

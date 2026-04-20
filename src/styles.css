@@ -727,6 +727,49 @@ html, body {
   cursor: pointer;
 }
 
+.form-row--top {
+  align-items: flex-start;
+}
+
+.btn-inline {
+  font-size: 11px;
+  padding: 1px 5px;
+  margin-left: 4px;
+  vertical-align: middle;
+  opacity: 0.6;
+}
+.btn-inline:hover { opacity: 1; }
+
+.albums-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  background: var(--input-bg);
+  min-width: 200px;
+}
+
+.album-check-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 2px 0;
+  white-space: nowrap;
+}
+
+.album-check-row input[type=checkbox] {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 .form-hint {
   font-size: 11px;
   color: var(--text-tertiary);

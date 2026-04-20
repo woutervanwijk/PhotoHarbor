@@ -31,7 +31,8 @@
       "Bash(curl -sL https://github.com/rhoopr/kei/releases/download/v0.9.2/kei-macos-aarch64.tar.gz)",
       "Bash(tar -tzf -)",
       "Bash(brew upgrade *)",
-      "Bash(kei logout *)"
+      "Bash(kei logout *)",
+      "Bash(kei list *)"
     ],
     "additionalDirectories": [
       "/private/tmp/kei-update"

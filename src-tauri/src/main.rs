@@ -326,6 +326,36 @@ fn is_lock_error(line: &str) -> bool {
         || line.contains("Another kei instance is running")
 }
 
+/// Run `kei list albums` and return the album names.
+/// Returns an error if kei is not authenticated or the command fails.
+#[tauri::command]
+async fn list_kei_albums() -> Result<Vec<String>, String> {
+    let kei_bin = which_kei()?;
+    let output = Command::new(&kei_bin)
+        .args(["list", "albums"])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run kei list albums: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("kei list albums failed: {}", stderr.trim()));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let albums: Vec<String> = stdout
+        .lines()
+        .filter(|l| l.starts_with("  ") && !l.trim().is_empty())
+        .map(|l| l.trim().to_string())
+        .collect();
+
+    if albums.is_empty() {
+        Err("No albums found".to_string())
+    } else {
+        Ok(albums)
+    }
+}
+
 /// Delete any .lock files in the kei cookies directory.
 async fn delete_kei_lock() {
     let Ok(base) = kei_config_dir() else { return };
@@ -825,6 +855,7 @@ fn main() {
             request_2fa_code,
             submit_2fa,
             clear_kei_session,
+            list_kei_albums,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Kei PhotoSync");

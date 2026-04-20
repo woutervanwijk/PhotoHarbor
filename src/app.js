@@ -419,6 +419,81 @@ async function loadHistory() {
 // Settings view
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Album picker (shared logic for include and exclude lists)
+// ---------------------------------------------------------------------------
+
+const albumsList = document.getElementById("cfg-albums-list");
+const albumsTextInput = document.getElementById("cfg-albums");
+const excludeAlbumsList = document.getElementById("cfg-exclude-albums-list");
+const excludeAlbumsTextInput = document.getElementById("cfg-exclude-albums");
+
+function _readChecklist(listEl, textEl) {
+  if (!listEl.classList.contains("hidden")) {
+    return Array.from(listEl.querySelectorAll("input[type=checkbox]:checked"))
+      .map((cb) => cb.value);
+  }
+  return parseAlbums(textEl.value) ?? [];
+}
+
+function getSelectedAlbums() {
+  return _readChecklist(albumsList, albumsTextInput);
+}
+
+function getExcludeAlbums() {
+  return _readChecklist(excludeAlbumsList, excludeAlbumsTextInput);
+}
+
+function _renderChecklist(listEl, textEl, albums, selected) {
+  listEl.innerHTML = "";
+  const sel = new Set(selected.map((s) => s.toLowerCase()));
+  for (const name of albums) {
+    const label = document.createElement("label");
+    label.className = "album-check-row";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = name;
+    cb.checked = sel.has(name.toLowerCase());
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(name));
+    listEl.appendChild(label);
+  }
+  listEl.classList.remove("hidden");
+  textEl.classList.add("hidden");
+}
+
+async function _loadPicker(listEl, textEl, selected) {
+  try {
+    const albums = await invoke("list_kei_albums");
+    _renderChecklist(listEl, textEl, albums, selected);
+  } catch {
+    // Not authenticated or kei unavailable — use text input.
+    listEl.classList.add("hidden");
+    textEl.classList.remove("hidden");
+    textEl.value = selected.join(", ");
+  }
+}
+
+function loadAlbumPicker(selected) {
+  return _loadPicker(albumsList, albumsTextInput, selected);
+}
+
+function loadExcludeAlbumPicker(selected) {
+  return _loadPicker(excludeAlbumsList, excludeAlbumsTextInput, selected);
+}
+
+document.getElementById("cfg-albums-refresh").addEventListener("click", () => {
+  loadAlbumPicker(getSelectedAlbums());
+});
+
+document.getElementById("cfg-exclude-albums-refresh").addEventListener("click", () => {
+  loadExcludeAlbumPicker(getExcludeAlbums());
+});
+
+// ---------------------------------------------------------------------------
+// Settings view
+// ---------------------------------------------------------------------------
+
 async function loadSettings() {
   try {
     const cfg = await invoke("get_config");
@@ -431,12 +506,14 @@ async function loadSettings() {
     document.getElementById("cfg-exif").checked = cfg.download?.set_exif_datetime ?? false;
     document.getElementById("cfg-skip-videos").checked = cfg.filters?.skip_videos ?? false;
     document.getElementById("cfg-skip-photos").checked = cfg.filters?.skip_photos ?? false;
+
     const albums = cfg.filters?.albums ?? [];
     const albumsAll = albums.length === 1 && albums[0].toLowerCase() === "all";
     document.getElementById("cfg-albums-all").checked = albumsAll;
-    document.getElementById("cfg-albums").value = albumsAll ? "" : albums.join(", ");
     document.getElementById("cfg-albums-row").classList.toggle("hidden", albumsAll);
-    document.getElementById("cfg-exclude-albums").value = (cfg.filters?.exclude_albums ?? []).join(", ");
+    if (!albumsAll) loadAlbumPicker(albums);
+
+    loadExcludeAlbumPicker(cfg.filters?.exclude_albums ?? []);
     document.getElementById("cfg-recent").value = cfg.filters?.recent ?? "";
     document.getElementById("cfg-watch-interval").value = cfg.watch?.interval ?? "";
     document.getElementById("cfg-log-level").value = cfg.log_level ?? "";
@@ -478,8 +555,8 @@ document.getElementById("settings-form").addEventListener("submit", async (e) =>
   const skipVideos = document.getElementById("cfg-skip-videos").checked;
   const skipPhotos = document.getElementById("cfg-skip-photos").checked;
   const albumsAll = document.getElementById("cfg-albums-all").checked;
-  const albums = albumsAll ? ["all"] : parseAlbums(document.getElementById("cfg-albums").value);
-  const excludeAlbums = parseAlbums(document.getElementById("cfg-exclude-albums").value);
+  const albums = albumsAll ? ["all"] : (getSelectedAlbums().length > 0 ? getSelectedAlbums() : null);
+  const excludeAlbums = getExcludeAlbums().length > 0 ? getExcludeAlbums() : null;
   const recent = parseInt(document.getElementById("cfg-recent").value, 10);
   const watchInterval = parseInt(document.getElementById("cfg-watch-interval").value, 10);
   const logLevel = document.getElementById("cfg-log-level").value || null;
