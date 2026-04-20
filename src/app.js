@@ -159,6 +159,8 @@ resizeHandle.addEventListener("mousedown", (e) => {
   document.addEventListener("mouseup", onUp);
 });
 
+const MAX_GLOBAL_LOG_LINES = 2000;
+
 function appendGlobalLog(raw) {
   const clean = stripAnsi(raw)
     .replace(/^\[err\]\s*/, "")
@@ -167,6 +169,10 @@ function appendGlobalLog(raw) {
   line.className = "raw-log-line";
   line.textContent = clean;
   globalLog.appendChild(line);
+  // Trim old lines to keep the DOM small.
+  while (globalLog.childElementCount > MAX_GLOBAL_LOG_LINES) {
+    globalLog.firstElementChild.remove();
+  }
   if (logPanelOpen) {
     globalLog.scrollTop = globalLog.scrollHeight;
   } else {
@@ -181,45 +187,83 @@ function appendGlobalLog(raw) {
 
 let syncRunning = false;
 
+// ---------------------------------------------------------------------------
+// Batched log rendering — incoming lines are queued and flushed at most once
+// per animation frame so rapid kei output cannot block the UI thread.
+// ---------------------------------------------------------------------------
+
+const MAX_SYNC_LOG_ENTRIES = 2000;
+
 // Dedup state for the sync log — reset each time a new sync starts.
 let _lastSyncEl = null;
 let _lastSyncKey = null;
 let _lastSyncCount = 1;
+let _lastParsed = null;
+
+// Queue of raw strings waiting to be rendered.
+const _logQueue = [];
+let _logFlushPending = false;
 
 function resetSyncDedup() {
   _lastSyncEl = null;
   _lastSyncKey = null;
   _lastSyncCount = 1;
+  _lastParsed = null;
 }
 
-function appendLog(raw) {
-  const parsed = parseLine(raw);
-  const key = dedupKey(parsed);
+function _flushLogQueue() {
+  _logFlushPending = false;
+  if (_logQueue.length === 0) return;
 
-  if (key && key === _lastSyncKey && _lastSyncEl) {
-    // Same message as the previous entry — collapse into it.
-    _lastSyncCount++;
-    const countEl = _lastSyncEl.querySelector(".log-count");
-    if (countEl) {
-      countEl.textContent = `×${_lastSyncCount}`;
-      countEl.classList.remove("hidden");
+  const fragment = document.createDocumentFragment();
+  let didAppend = false;
+
+  for (const raw of _logQueue) {
+    const parsed = parseLine(raw);
+    const key = dedupKey(parsed);
+    _lastParsed = parsed;
+
+    if (key && key === _lastSyncKey && _lastSyncEl) {
+      _lastSyncCount++;
+      const countEl = _lastSyncEl.querySelector(".log-count");
+      if (countEl) {
+        countEl.textContent = `×${_lastSyncCount}`;
+        countEl.classList.remove("hidden");
+      }
+      const timeEl = _lastSyncEl.querySelector("[data-role='time']");
+      if (timeEl && parsed.time) timeEl.textContent = parsed.time;
+    } else {
+      const entryEl = renderEntry(parsed);
+      fragment.appendChild(entryEl);
+      _lastSyncEl = entryEl;
+      _lastSyncKey = key;
+      _lastSyncCount = 1;
+      didAppend = true;
     }
-    // Advance the timestamp to the latest occurrence.
-    const timeEl = _lastSyncEl.querySelector("[data-role='time']");
-    if (timeEl && parsed.time) timeEl.textContent = parsed.time;
-    syncLog.scrollTop = syncLog.scrollHeight;
-  } else {
-    // New or different entry — render and append.
-    const entryEl = renderEntry(parsed);
-    syncLog.appendChild(entryEl);
-    _lastSyncEl = entryEl;
-    _lastSyncKey = key;
-    _lastSyncCount = 1;
+  }
+  _logQueue.length = 0;
+
+  if (didAppend) {
+    syncLog.appendChild(fragment);
+    // Trim old entries to keep the DOM small.
+    while (syncLog.childElementCount > MAX_SYNC_LOG_ENTRIES) {
+      syncLog.firstElementChild.remove();
+    }
     syncLog.scrollTop = syncLog.scrollHeight;
   }
 
-  // Always update the compact single-entry view.
-  syncLogCompact.replaceChildren(renderEntry(parsed));
+  // Update compact view to the latest line.
+  if (_lastParsed) {
+    syncLogCompact.replaceChildren(renderEntry(_lastParsed));
+  }
+}
+
+function appendLog(raw) {
+  _logQueue.push(raw);
+  if (!_logFlushPending) {
+    _logFlushPending = true;
+    requestAnimationFrame(_flushLogQueue);
+  }
 }
 
 function setSyncRunning(running) {
@@ -232,9 +276,17 @@ function setSyncRunning(running) {
 }
 
 // Register Tauri event listeners once.
-listen("sync-output", (event) => {
-  appendLog(event.payload);
-  appendGlobalLog(event.payload);
+// Lines arrive as batches (Vec<String>) to reduce IPC overhead.
+listen("sync-output-batch", (event) => {
+  for (const line of event.payload) {
+    console.log("[kei]", line);
+    _logQueue.push(line);
+    appendGlobalLog(line);
+  }
+  if (!_logFlushPending) {
+    _logFlushPending = true;
+    requestAnimationFrame(_flushLogQueue);
+  }
 });
 listen("sync-2fa-required", () => show2FAModal());
 listen("sync-completed", () => {
@@ -247,6 +299,10 @@ listen("sync-failed", (event) => {
   appendLog(`── Sync failed: ${event.payload} ──`, "err");
   appendGlobalLog(`── Sync failed: ${event.payload} ──`);
   badge.classList.add("error");
+  if (_retryAfterLockClear) {
+    _retryAfterLockClear = false;
+    setTimeout(() => doStartSync(), 500);
+  }
 });
 
 async function doStartSync() {
@@ -306,6 +362,13 @@ listen("sync-adp-detected", () => {
 listen("sync-session-reset", () => {
   appendLog("── Session error detected — login state cleared, next sync will re-authenticate ──");
   appendGlobalLog("── Session error detected — login state cleared ──");
+});
+
+let _retryAfterLockClear = false;
+listen("sync-lock-cleared", () => {
+  _retryAfterLockClear = true;
+  appendLog("── Stale lock detected — cleared, retrying sync… ──");
+  appendGlobalLog("── Stale lock cleared, retrying sync… ──");
 });
 
 // ---------------------------------------------------------------------------
@@ -368,7 +431,11 @@ async function loadSettings() {
     document.getElementById("cfg-exif").checked = cfg.download?.set_exif_datetime ?? false;
     document.getElementById("cfg-skip-videos").checked = cfg.filters?.skip_videos ?? false;
     document.getElementById("cfg-skip-photos").checked = cfg.filters?.skip_photos ?? false;
-    document.getElementById("cfg-albums").value = (cfg.filters?.albums ?? []).join(", ");
+    const albums = cfg.filters?.albums ?? [];
+    const albumsAll = albums.length === 1 && albums[0].toLowerCase() === "all";
+    document.getElementById("cfg-albums-all").checked = albumsAll;
+    document.getElementById("cfg-albums").value = albumsAll ? "" : albums.join(", ");
+    document.getElementById("cfg-albums-row").classList.toggle("hidden", albumsAll);
     document.getElementById("cfg-exclude-albums").value = (cfg.filters?.exclude_albums ?? []).join(", ");
     document.getElementById("cfg-recent").value = cfg.filters?.recent ?? "";
     document.getElementById("cfg-watch-interval").value = cfg.watch?.interval ?? "";
@@ -385,6 +452,10 @@ function parseAlbums(val) {
     .filter(Boolean);
   return list.length > 0 ? list : null;
 }
+
+document.getElementById("cfg-albums-all").addEventListener("change", (e) => {
+  document.getElementById("cfg-albums-row").classList.toggle("hidden", e.target.checked);
+});
 
 document.getElementById("cfg-directory-pick").addEventListener("click", async () => {
   const dir = await openDialog({ directory: true, multiple: false, title: "Select Download Directory" });
@@ -406,7 +477,8 @@ document.getElementById("settings-form").addEventListener("submit", async (e) =>
   const setExif = document.getElementById("cfg-exif").checked;
   const skipVideos = document.getElementById("cfg-skip-videos").checked;
   const skipPhotos = document.getElementById("cfg-skip-photos").checked;
-  const albums = parseAlbums(document.getElementById("cfg-albums").value);
+  const albumsAll = document.getElementById("cfg-albums-all").checked;
+  const albums = albumsAll ? ["all"] : parseAlbums(document.getElementById("cfg-albums").value);
   const excludeAlbums = parseAlbums(document.getElementById("cfg-exclude-albums").value);
   const recent = parseInt(document.getElementById("cfg-recent").value, 10);
   const watchInterval = parseInt(document.getElementById("cfg-watch-interval").value, 10);

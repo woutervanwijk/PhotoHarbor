@@ -189,7 +189,7 @@
             <div class="form-row">
               <label for="cfg-folder-structure">Folder Structure</label>
               <input type="text" id="cfg-folder-structure" placeholder="%Y/%m/%d" />
-              <span class="form-hint">strftime format, or {album}/%Y/%m. Leave blank for none.</span>
+              <span class="form-hint">strftime format. Use <code>{album}</code> as the first segment for per-album subfolders, e.g. <code>{album}/%Y/%m/%d</code>. Photos not in any album land at the path without the <code>{album}</code> prefix. Leave blank for a flat structure.</span>
             </div>
             <div class="form-row">
               <label for="cfg-exif">Set EXIF datetime</label>
@@ -208,6 +208,11 @@
               <input type="checkbox" id="cfg-skip-photos" />
             </div>
             <div class="form-row">
+              <label for="cfg-albums-all">All Albums</label>
+              <input type="checkbox" id="cfg-albums-all" />
+              <span class="form-hint">Sync every user-created album. Apple smart folders (Favorites, Screenshots, etc.) are skipped unless named explicitly below.</span>
+            </div>
+            <div class="form-row" id="cfg-albums-row">
               <label for="cfg-albums">Only These Albums</label>
               <input type="text" id="cfg-albums" placeholder="Vacation, Family (comma-separated)" />
             </div>
@@ -236,7 +241,6 @@
               <label for="cfg-log-level">Log Level</label>
               <select id="cfg-log-level">
                 <option value="">default</option>
-                <option value="debug">debug</option>
                 <option value="info">info</option>
                 <option value="warn">warn</option>
                 <option value="error">error</option>

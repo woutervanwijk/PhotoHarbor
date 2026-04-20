@@ -320,6 +320,25 @@ fn is_adp_error(line: &str) -> bool {
         || lower.contains("icdpenabled")
 }
 
+/// Detect a stale session lock left behind by a previous hard-quit.
+fn is_lock_error(line: &str) -> bool {
+    line.contains("Session lock held by another instance")
+        || line.contains("Another kei instance is running")
+}
+
+/// Delete any .lock files in the kei cookies directory.
+async fn delete_kei_lock() {
+    let Ok(base) = kei_config_dir() else { return };
+    let cookies_dir = base.join("cookies");
+    if let Ok(rd) = std::fs::read_dir(&cookies_dir) {
+        for entry in rd.flatten() {
+            if entry.path().extension().and_then(|e| e.to_str()) == Some("lock") {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
+}
+
 /// Detect a 421 Misdirected Request that indicates a corrupt/stale session.
 /// kei 0.9.x surfaces this as "service error (http_421)" — distinct from the
 /// transient retry message ("retrying with fresh connection pool") which kei
@@ -403,61 +422,97 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
         let mut stdout_lines = stdout_reader.lines();
         let mut stderr_lines = stderr_reader.lines();
 
+        // Batch log lines and flush at most every 50 ms to avoid flooding the
+        // WebView IPC channel with hundreds of individual events per second.
+        let mut log_batch: Vec<String> = Vec::new();
+        let mut flush_ticker = tokio::time::interval(
+            tokio::time::Duration::from_millis(50)
+        );
+        flush_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+        // Helper: run per-line side-effect checks and buffer the display string.
+        macro_rules! handle_line {
+            ($l:expr, $prefix:expr) => {{
+                let l: String = $l;
+                let ll = l.to_lowercase();
+                let is_2fa = ll.contains("waiting for 2fa")
+                    || ll.contains("2fa code requested")
+                    || ll.contains("2fa_required")
+                    || ll.contains("get-code");
+                if is_2fa {
+                    let _ = app_handle.emit("sync-2fa-required", &l);
+                } else if is_password_prompt(&l) {
+                    let _ = app_handle.emit("sync-password-required", &l);
+                }
+                if is_adp_error(&l) {
+                    let _ = app_handle.emit("sync-adp-detected", &l);
+                }
+                if is_session_error(&l) {
+                    let _ = clear_kei_session().await;
+                    let _ = app_handle.emit("sync-session-reset", ());
+                }
+                if is_lock_error(&l) {
+                    delete_kei_lock().await;
+                    let _ = app_handle.emit("sync-lock-cleared", ());
+                }
+                // DEBUG / TRACE tracing lines are too noisy to display in the
+                // UI — drop them from the batch.  Detection checks above still
+                // run on the full original line, so nothing important is lost.
+                if l.contains("  DEBUG ") || l.contains("  TRACE ") {
+                    // skip
+                } else {
+                    let raw_display = if $prefix { format!("[err] {l}") } else { l };
+                    // Truncate very long lines (e.g. JSON blobs) before sending
+                    // over IPC — avoids slow regex and large DOM nodes in the UI.
+                    const MAX_LINE_CHARS: usize = 600;
+                    let display = if raw_display.chars().count() > MAX_LINE_CHARS {
+                        let head: String = raw_display.chars().take(MAX_LINE_CHARS).collect();
+                        format!("{head}… [truncated]")
+                    } else {
+                        raw_display
+                    };
+                    log_batch.push(display);
+                }
+                // Flush immediately if the batch is getting large.
+                if log_batch.len() >= 200 {
+                    let _ = app_handle.emit("sync-output-batch", &log_batch);
+                    log_batch.clear();
+                }
+            }};
+        }
+
         loop {
             tokio::select! {
                 line = stdout_lines.next_line() => {
                     match line {
-                        Ok(Some(l)) => {
-                            let ll = l.to_lowercase();
-                            let is_2fa = ll.contains("waiting for 2fa")
-                                || ll.contains("2fa code requested")
-                                || ll.contains("2fa_required")
-                                || ll.contains("get-code");
-                            if is_2fa {
-                                let _ = app_handle.emit("sync-2fa-required", &l);
-                            } else if is_password_prompt(&l) {
-                                let _ = app_handle.emit("sync-password-required", &l);
-                            }
-                            if is_adp_error(&l) {
-                                let _ = app_handle.emit("sync-adp-detected", &l);
-                            }
-                            let _ = app_handle.emit("sync-output", &l);
-                        }
+                        Ok(Some(l)) => handle_line!(l, false),
                         Ok(None) => break,
                         Err(e) => {
-                            let _ = app_handle.emit("sync-output", format!("[stdout error] {e}"));
+                            log_batch.push(format!("[stdout error] {e}"));
                             break;
                         }
                     }
                 }
                 line = stderr_lines.next_line() => {
                     match line {
-                        Ok(Some(l)) => {
-                            // kei writes tracing logs (including 2FA prompts) to stderr.
-                            let ll = l.to_lowercase();
-                            let is_2fa = ll.contains("waiting for 2fa")
-                                || ll.contains("2fa code requested")
-                                || ll.contains("2fa_required")
-                                || ll.contains("get-code");
-                            if is_2fa {
-                                let _ = app_handle.emit("sync-2fa-required", &l);
-                            } else if is_password_prompt(&l) {
-                                let _ = app_handle.emit("sync-password-required", &l);
-                            }
-                            if is_adp_error(&l) {
-                                let _ = app_handle.emit("sync-adp-detected", &l);
-                            }
-                            if is_session_error(&l) {
-                                let _ = clear_kei_session().await;
-                                let _ = app_handle.emit("sync-session-reset", ());
-                            }
-                            let _ = app_handle.emit("sync-output", format!("[err] {l}"));
-                        }
+                        Ok(Some(l)) => handle_line!(l, true),
                         Ok(None) => {}
                         Err(_) => {}
                     }
                 }
+                _ = flush_ticker.tick() => {
+                    if !log_batch.is_empty() {
+                        let _ = app_handle.emit("sync-output-batch", &log_batch);
+                        log_batch.clear();
+                    }
+                }
             }
+        }
+
+        // Flush remaining batch before draining stderr.
+        if !log_batch.is_empty() {
+            let _ = app_handle.emit("sync-output-batch", &log_batch);
+            log_batch.clear();
         }
 
         // Drain stderr after stdout closes.
@@ -477,7 +532,22 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
                 let _ = clear_kei_session().await;
                 let _ = app_handle.emit("sync-session-reset", ());
             }
-            let _ = app_handle.emit("sync-output", format!("[err] {l}"));
+            if is_lock_error(&l) {
+                delete_kei_lock().await;
+                let _ = app_handle.emit("sync-lock-cleared", ());
+            }
+            if !l.contains("  DEBUG ") && !l.contains("  TRACE ") {
+                let raw = format!("[err] {l}");
+                let display = if raw.chars().count() > 600 {
+                    format!("{}… [truncated]", raw.chars().take(600).collect::<String>())
+                } else {
+                    raw
+                };
+                log_batch.push(display);
+            }
+        }
+        if !log_batch.is_empty() {
+            let _ = app_handle.emit("sync-output-batch", &log_batch);
         }
 
         // Drop stdin so kei sees EOF if it's still waiting.
