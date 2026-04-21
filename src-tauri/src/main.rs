@@ -329,29 +329,14 @@ fn is_lock_error(line: &str) -> bool {
 /// Run `kei list albums` and return the album names.
 /// Returns an error if kei is not authenticated or the command fails.
 #[tauri::command]
-async fn list_kei_albums(app: AppHandle) -> Result<Vec<String>, String> {
+async fn list_kei_albums() -> Result<Vec<String>, String> {
     let kei_bin = resolve_kei_bin().await?;
-    emit_log(&app, vec![format!("$ {} list albums", kei_bin)]);
 
     let output = Command::new(&kei_bin)
         .args(["list", "albums"])
         .output()
         .await
         .map_err(|e| format!("Failed to run kei list albums: {e}"))?;
-
-    // Emit all stdout + stderr to the global log.
-    let mut log_lines: Vec<String> = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| l.to_string())
-        .collect();
-    log_lines.extend(
-        String::from_utf8_lossy(&output.stderr)
-            .lines()
-            .filter(|l| !l.trim().is_empty())
-            .map(|l| format!("[err] {l}")),
-    );
-    emit_log(&app, log_lines);
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

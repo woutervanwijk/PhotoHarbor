@@ -212,6 +212,41 @@ registerParser({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Parser: kei-command
+//
+// Handles shell command lines emitted by the app before each kei invocation:
+//   $ /long/path/to/kei sync -a all
+//   $ /long/path/to/kei list albums
+// Strips the binary path to just "kei" and renders each arg as a chip.
+// ─────────────────────────────────────────────────────────────────────────────
+
+registerParser({
+  name: "kei-command",
+
+  match: (line) => line.startsWith("$ "),
+
+  parse(line) {
+    const parts = line.slice(2).trim().split(/\s+/);
+    // Replace the full binary path with just the filename ("kei").
+    const bin = parts[0].replace(/.*[\\/]/, "");
+    const args = parts.slice(1);
+    return { _type: "kei-command", bin, args };
+  },
+
+  render(entry) {
+    const row = el("div", "log-entry log-entry--command");
+    const prompt = el("span", "log-cmd-prompt", "$");
+    const bin = el("span", "log-cmd-bin", entry.bin);
+    row.appendChild(prompt);
+    row.appendChild(bin);
+    for (const arg of entry.args) {
+      row.appendChild(el("span", "log-cmd-arg", arg));
+    }
+    return row;
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Parser: kei-summary
 //
 // Handles the plain-text summary lines kei prints at the end of a run:
