@@ -6,7 +6,6 @@ name: Build & Release
 
 on:
   push:
-    branches: [main]
     tags: ["v*"]
 
 permissions:
@@ -137,7 +136,6 @@ jobs:
   release:
     name: Create GitHub Release
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
 
     steps:

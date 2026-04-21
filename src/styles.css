@@ -113,6 +113,8 @@ html, body {
   padding: 0 16px 0 20px;
   border-bottom: 1px solid var(--sidebar-border);
   -webkit-app-region: drag;
+  -webkit-user-select: none;
+  user-select: none;
   background: var(--sidebar-bg);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   backdrop-filter: blur(20px) saturate(180%);
@@ -164,6 +166,8 @@ html, body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* Drag region for the macOS title bar traffic lights area */
@@ -183,6 +187,11 @@ html, body {
   color: var(--text-primary);
 }
 
+/* Nav items and their children must opt out of drag so clicks register */
+#nav-list {
+  -webkit-app-region: no-drag;
+}
+
 .app-icon {
   width: 28px;
   height: 28px;
@@ -195,8 +204,13 @@ html, body {
 #sidebar-header {
   cursor: pointer;
   border-radius: 8px;
+  -webkit-app-region: no-drag; /* must be clickable for About dialog */
 }
 #sidebar-header:hover { background: var(--nav-hover); }
+
+#nav-list {
+  -webkit-app-region: no-drag; /* nav clicks must work */
+}
 
 #nav-list {
   list-style: none;
