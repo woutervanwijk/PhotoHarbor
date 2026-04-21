@@ -306,6 +306,15 @@ html, body {
 .view { display: none; }
 .view.active { display: block; }
 
+.view-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.view-title-row .view-title {
+  margin-bottom: 0;
+}
 .view-title {
   font-size: 22px;
   font-weight: 700;

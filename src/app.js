@@ -592,9 +592,7 @@ document.getElementById("auth-wiki-btn").addEventListener("click", () => {
   invoke("open_url", { url: "https://github.com/rhoopr/kei/wiki/Authentication" });
 });
 
-document.getElementById("settings-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-
+async function saveSettings() {
   const username = document.getElementById("cfg-username").value.trim();
   const domain = document.getElementById("cfg-domain").value;
   const directory = document.getElementById("cfg-directory").value.trim();
@@ -644,11 +642,21 @@ document.getElementById("settings-form").addEventListener("submit", async (e) =>
     document.getElementById("settings-required-notice").classList.add("hidden");
     const msg = document.getElementById("settings-saved-msg");
     msg.classList.remove("hidden");
-    setTimeout(() => msg.classList.add("hidden"), 2500);
+    clearTimeout(msg._hideTimer);
+    msg._hideTimer = setTimeout(() => msg.classList.add("hidden"), 2000);
   } catch (err) {
     alert(`Failed to save settings:\n${err}`);
   }
-});
+}
+
+let _saveTimer = null;
+function scheduleSave() {
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(saveSettings, 600);
+}
+
+document.getElementById("settings-form").addEventListener("input", scheduleSave);
+document.getElementById("settings-form").addEventListener("change", scheduleSave);
 
 // ---------------------------------------------------------------------------
 // Password Modal

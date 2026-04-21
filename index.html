@@ -145,7 +145,10 @@
 
       <!-- ── Settings ─────────────────────────────────────────────── -->
       <section id="view-settings" class="view">
-        <h1 class="view-title">Settings</h1>
+        <div class="view-title-row">
+          <h1 class="view-title">Settings</h1>
+          <span id="settings-saved-msg" class="saved-msg hidden">Saved</span>
+        </div>
         <div id="settings-required-notice" class="notice notice--warn hidden">
           <strong>Settings required before syncing.</strong>
           <span id="settings-required-detail"></span>
@@ -191,15 +194,7 @@
           </div>
 
           <div class="settings-group">
-            <h2 class="settings-group-title">Filters</h2>
-            <div class="form-row">
-              <label for="cfg-skip-videos">Skip Videos</label>
-              <input type="checkbox" id="cfg-skip-videos" />
-            </div>
-            <div class="form-row">
-              <label for="cfg-skip-photos">Skip Photos</label>
-              <input type="checkbox" id="cfg-skip-photos" />
-            </div>
+            <h2 class="settings-group-title">Albums</h2>
             <div class="form-row">
               <label for="cfg-albums-all">All Albums</label>
               <input type="checkbox" id="cfg-albums-all" />
@@ -214,6 +209,18 @@
               <label>Exclude Albums <button type="button" class="btn-ghost btn-inline" id="cfg-exclude-albums-refresh" title="Refresh album list">↻</button></label>
               <div id="cfg-exclude-albums-list" class="albums-checklist hidden"></div>
               <input type="text" id="cfg-exclude-albums" placeholder="Screenshots, Hidden (comma-separated)" />
+            </div>
+          </div>
+
+          <div class="settings-group">
+            <h2 class="settings-group-title">Filters</h2>
+            <div class="form-row">
+              <label for="cfg-skip-videos">Skip Videos</label>
+              <input type="checkbox" id="cfg-skip-videos" />
+            </div>
+            <div class="form-row">
+              <label for="cfg-skip-photos">Skip Photos</label>
+              <input type="checkbox" id="cfg-skip-photos" />
             </div>
             <div class="form-row">
               <label for="cfg-recent">Only Most Recent N</label>
@@ -294,10 +301,6 @@
 
           </details>
 
-          <div class="form-actions">
-            <button type="submit" class="btn-primary">Save Settings</button>
-            <span id="settings-saved-msg" class="saved-msg hidden">Saved!</span>
-          </div>
         </form>
       </section>
     </main>
