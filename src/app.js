@@ -523,8 +523,8 @@ async function loadSettings() {
     document.getElementById("cfg-domain").value = cfg.auth?.domain ?? "com";
     document.getElementById("cfg-directory").value = cfg.download?.directory ?? "";
     document.getElementById("cfg-threads").value = cfg.download?.threads_num ?? "";
-    // Folder structure (non-album)
-    const folderStructureVal = cfg.download?.folder_structure ?? "%Y/%m/%d";
+    // Folder structure (non-album) — stored in AppSettings, not kei's TOML
+    const folderStructureVal = appSettings.folder_structure ?? "%Y/%m/%d";
     const folderSelect = document.getElementById("cfg-folder-structure-select");
     const knownFolderOptions = Array.from(folderSelect.options).map((o) => o.value).filter((v) => v !== "__custom__");
     if (knownFolderOptions.includes(folderStructureVal)) {
@@ -560,6 +560,7 @@ async function loadSettings() {
     const albums = albumsAll ? [] : (cfg.filters?.albums ?? []);
     document.getElementById("cfg-albums-all").checked = albumsAll;
     document.getElementById("cfg-albums-row").classList.toggle("hidden", albumsAll);
+    document.getElementById("cfg-exclude-albums-row").classList.toggle("hidden", !albumsAll);
     if (!albumsAll) loadAlbumPicker(albums);
 
     loadExcludeAlbumPicker(cfg.filters?.exclude_albums ?? []);
@@ -601,6 +602,7 @@ function parseAlbums(val) {
 
 document.getElementById("cfg-albums-all").addEventListener("change", (e) => {
   document.getElementById("cfg-albums-row").classList.toggle("hidden", e.target.checked);
+  document.getElementById("cfg-exclude-albums-row").classList.toggle("hidden", !e.target.checked);
 });
 
 document.getElementById("cfg-folder-structure-select").addEventListener("change", (e) => {
@@ -617,7 +619,7 @@ document.getElementById("cfg-use-system-kei").addEventListener("change", (e) => 
 
 document.getElementById("cfg-directory-pick").addEventListener("click", async () => {
   const dir = await openDialog({ directory: true, multiple: false, title: "Select Download Directory" });
-  if (dir) document.getElementById("cfg-directory").value = dir;
+  if (dir) { document.getElementById("cfg-directory").value = dir; scheduleSave(); }
 });
 
 document.getElementById("auth-wiki-btn").addEventListener("click", () => {
@@ -638,13 +640,6 @@ async function saveSettings() {
   const albumFolderStructure = albumFolderSelectVal === "__custom__"
     ? document.getElementById("cfg-album-folder-structure").value.trim()
     : albumFolderSelectVal;
-
-  // Compute the value written to kei's config. {album} must always be present so
-  // kei can separate album and non-album photos. For "same", prefix the base
-  // pattern with {album}/; for an explicit album pattern it's already included.
-  const folderStructure = albumFolderStructure === "__same__"
-    ? (folderStructureBase ? `{album}/${folderStructureBase}` : "{album}")
-    : albumFolderStructure;
   const setExif = document.getElementById("cfg-exif").checked;
   const skipVideos = document.getElementById("cfg-skip-videos").checked;
   const skipPhotos = document.getElementById("cfg-skip-photos").checked;
@@ -666,7 +661,7 @@ async function saveSettings() {
     download: {
       directory: directory || null,
       threads_num: isNaN(threads) ? null : threads,
-      folder_structure: folderStructure || null,
+      folder_structure: null, // managed via AppSettings; written to TOML by start_sync
       set_exif_datetime: setExif || null,
     },
     filters: {
@@ -687,6 +682,7 @@ async function saveSettings() {
       invoke("save_app_settings", { settings: {
         use_system_kei: useSystemKei,
         all_albums: albumsAll,
+        folder_structure: folderStructureBase || null,
         album_folder_structure: albumFolderStructure === "__same__" ? null : albumFolderStructure,
       } }),
     ]);
@@ -702,6 +698,7 @@ async function saveSettings() {
 
 let _saveTimer = null;
 function scheduleSave() {
+  if (!document.getElementById("view-settings").classList.contains("active")) return;
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(saveSettings, 600);
 }

@@ -163,10 +163,21 @@ async fn get_config() -> Result<KeiConfig, String> {
 }
 
 #[tauri::command]
-async fn save_config(config: KeiConfig) -> Result<(), String> {
+async fn save_config(mut config: KeiConfig) -> Result<(), String> {
     let path = config_path()?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    // folder_structure is owned by AppSettings and written by start_sync.
+    // Preserve whatever kei's TOML currently has so save_config never strips it,
+    // which would cause kei to detect a config change on the next sync.
+    if config.download.as_ref().and_then(|d| d.folder_structure.as_ref()).is_none() {
+        if let Some(existing_fs) = get_config().await.ok()
+            .and_then(|c| c.download)
+            .and_then(|d| d.folder_structure)
+        {
+            config.download.get_or_insert_with(Default::default).folder_structure = Some(existing_fs);
+        }
     }
     let content = toml::to_string_pretty(&config).map_err(|e| e.to_string())?;
     std::fs::write(&path, content).map_err(|e| e.to_string())
@@ -458,6 +469,34 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
         }
         if let (Ok(path), Ok(content)) = (config_path(), toml::to_string_pretty(&clean)) {
             let _ = std::fs::write(path, content);
+        }
+    }
+
+    // Compute folder_structure from AppSettings and write to kei's TOML only if
+    // the value changed — writing an identical value would still cause kei to
+    // detect a config change and re-verify all files.
+    {
+        let base = app_settings.folder_structure.as_deref().unwrap_or("%Y/%m/%d");
+        let kei_folder_structure = match app_settings.album_folder_structure.as_deref() {
+            None | Some("") => {
+                if base.is_empty() {
+                    "{album}".to_string()
+                } else {
+                    format!("{{album}}/{}", base)
+                }
+            }
+            Some(album_pattern) => album_pattern.to_string(),
+        };
+        let mut cfg_to_write = get_config().await.unwrap_or_default();
+        let current = cfg_to_write.download.as_ref()
+            .and_then(|d| d.folder_structure.as_deref())
+            .unwrap_or("");
+        if current != kei_folder_structure {
+            cfg_to_write.download.get_or_insert_with(Default::default).folder_structure =
+                Some(kei_folder_structure);
+            if let (Ok(path), Ok(content)) = (config_path(), toml::to_string_pretty(&cfg_to_write)) {
+                let _ = std::fs::write(path, content);
+            }
         }
     }
 
@@ -826,8 +865,10 @@ pub struct AppSettings {
     /// When true, passes `-a all` to `kei sync` rather than storing ["all"] in
     /// kei's TOML (which kei interprets as a literal album name and errors).
     pub all_albums: Option<bool>,
+    /// Base folder structure pattern for non-album photos (e.g. "%Y/%m/%d").
+    pub folder_structure: Option<String>,
     /// Folder structure pattern for album photos (e.g. "{album}/%Y/%m/%d").
-    /// When None/"__same__", album photos use the same pattern as non-album photos.
+    /// When None, album photos use "{album}/" prepended to folder_structure.
     pub album_folder_structure: Option<String>,
 }
 
