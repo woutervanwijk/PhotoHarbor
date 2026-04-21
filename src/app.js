@@ -11,7 +11,7 @@ const views = document.querySelectorAll(".view");
 const navItems = document.querySelectorAll(".nav-item");
 const toolbarTitle = document.getElementById("toolbar-title");
 
-const VIEW_TITLES = { dashboard: "Dashboard", sync: "Sync", history: "History", settings: "Settings" };
+const VIEW_TITLES = { sync: "Sync", history: "History", settings: "Settings" };
 
 function showView(name) {
   views.forEach((v) => v.classList.remove("active"));
@@ -22,19 +22,13 @@ function showView(name) {
   if (navItem) navItem.classList.add("active");
   toolbarTitle.textContent = VIEW_TITLES[name] ?? "";
 
-  if (name === "dashboard") loadDashboard();
+  if (name === "sync") loadDashboard();
   if (name === "history") loadHistory();
   if (name === "settings") loadSettings();
 }
 
 navItems.forEach((item) => {
   item.addEventListener("click", () => showView(item.dataset.view));
-});
-
-document.getElementById("dashboard-sync-btn").addEventListener("click", () => {
-  showView("sync");
-  // Kick off the sync after navigation so the log is visible immediately.
-  doStartSync();
 });
 
 // ---------------------------------------------------------------------------
@@ -771,5 +765,5 @@ document.getElementById("copy-install-cmd").addEventListener("click", () => {
   });
 });
 
-toolbarTitle.textContent = VIEW_TITLES["dashboard"];
+toolbarTitle.textContent = VIEW_TITLES["sync"];
 loadDashboard();

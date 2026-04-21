@@ -16,10 +16,7 @@
         <span class="app-name">Kei PhotoSync</span>
       </div>
       <ul id="nav-list">
-        <li class="nav-item active" data-view="dashboard">
-          <span class="nav-icon nav-icon--dashboard"></span>Dashboard
-        </li>
-        <li class="nav-item" data-view="sync">
+        <li class="nav-item active" data-view="sync">
           <span class="nav-icon nav-icon--sync"></span>Sync
         </li>
         <li class="nav-item" data-view="history">
@@ -48,8 +45,9 @@
     <!-- Main content area -->
     <main id="content">
       <!-- ── Dashboard ────────────────────────────────────────────── -->
-      <section id="view-dashboard" class="view active">
-        <h1 class="view-title">Dashboard</h1>
+      <!-- ── Sync ─────────────────────────────────────────────────── -->
+      <section id="view-sync" class="view active">
+        <h1 class="view-title">Sync</h1>
         <div id="dashboard-no-config" class="notice hidden">
           <p>No correct configuration found. Head to <strong>Settings</strong> to enter your iCloud username and download directory.</p>
         </div>
@@ -71,21 +69,31 @@
             <div class="stat-label">Total Assets</div>
           </div>
         </div>
-        <div class="section-card">
+        <div class="section-card last-sync-card">
           <h2>Last Sync</h2>
-          <table class="info-table">
-            <tr><td class="info-label">Started</td><td id="last-started">—</td></tr>
-            <tr><td class="info-label">Completed</td><td id="last-completed">—</td></tr>
-            <tr><td class="info-label">Downloaded</td><td id="last-dl">—</td></tr>
-            <tr><td class="info-label">Failed</td><td id="last-dl-failed">—</td></tr>
-          </table>
+          <div class="last-sync-grid">
+            <div class="last-sync-col">
+              <div class="last-sync-row">
+                <span class="last-sync-label">Started</span>
+                <span class="last-sync-value" id="last-started">—</span>
+              </div>
+              <div class="last-sync-row">
+                <span class="last-sync-label">Completed</span>
+                <span class="last-sync-value" id="last-completed">—</span>
+              </div>
+            </div>
+            <div class="last-sync-col">
+              <div class="last-sync-row">
+                <span class="last-sync-label">Downloaded</span>
+                <span class="last-sync-value" id="last-dl">—</span>
+              </div>
+              <div class="last-sync-row">
+                <span class="last-sync-label">Failed</span>
+                <span class="last-sync-value" id="last-dl-failed">—</span>
+              </div>
+            </div>
+          </div>
         </div>
-        <button class="btn-primary" id="dashboard-sync-btn" style="margin-top:16px">Start Sync</button>
-      </section>
-
-      <!-- ── Sync ─────────────────────────────────────────────────── -->
-      <section id="view-sync" class="view">
-        <h1 class="view-title">Sync</h1>
         <div class="sync-controls">
           <button class="btn-primary" id="sync-start-btn">Start Sync</button>
           <button class="btn-destructive" id="sync-stop-btn" disabled>Stop</button>
