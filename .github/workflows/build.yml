@@ -125,6 +125,33 @@ jobs:
           cp src-tauri/target/release/bundle/appimage/*.AppImage artifacts/
           cp src-tauri/target/release/bundle/deb/*.deb artifacts/
 
+      # ── Flatpak (disabled for now) ────────────────────────────────────────────
+      # - name: Cache Flatpak runtime
+      #   if: matrix.os == 'ubuntu-22.04'
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: ~/.local/share/flatpak
+      #     key: flatpak-gnome-47
+      #
+      # - name: Install Flatpak runtime
+      #   if: matrix.os == 'ubuntu-22.04'
+      #   run: |
+      #     flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+      #     flatpak install --user -y --noninteractive flathub org.gnome.Platform//47 org.gnome.Sdk//47 \
+      #       || flatpak update --user -y --noninteractive
+      #
+      # - name: Build Flatpak
+      #   if: matrix.os == 'ubuntu-22.04'
+      #   run: |
+      #     mkdir -p build-staging
+      #     cp src-tauri/target/release/kei-photosync build-staging/
+      #     cp src-tauri/binaries/kei-x86_64-unknown-linux-gnu build-staging/
+      #     flatpak-builder --force-clean --user \
+      #       flatpak-build-dir flatpak/com.kei.photosync.yml
+      #     flatpak build-export flatpak-repo flatpak-build-dir
+      #     flatpak build-bundle flatpak-repo \
+      #       artifacts/kei-photosync.flatpak com.kei.photosync
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
