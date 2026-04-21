@@ -523,7 +523,31 @@ async function loadSettings() {
     document.getElementById("cfg-domain").value = cfg.auth?.domain ?? "com";
     document.getElementById("cfg-directory").value = cfg.download?.directory ?? "";
     document.getElementById("cfg-threads").value = cfg.download?.threads_num ?? "";
-    document.getElementById("cfg-folder-structure").value = cfg.download?.folder_structure ?? "";
+    // Folder structure (non-album)
+    const folderStructureVal = cfg.download?.folder_structure ?? "%Y/%m/%d";
+    const folderSelect = document.getElementById("cfg-folder-structure-select");
+    const knownFolderOptions = Array.from(folderSelect.options).map((o) => o.value).filter((v) => v !== "__custom__");
+    if (knownFolderOptions.includes(folderStructureVal)) {
+      folderSelect.value = folderStructureVal;
+      document.getElementById("cfg-folder-structure-custom-row").classList.add("hidden");
+    } else {
+      folderSelect.value = "__custom__";
+      document.getElementById("cfg-folder-structure").value = folderStructureVal;
+      document.getElementById("cfg-folder-structure-custom-row").classList.remove("hidden");
+    }
+
+    // Album folder structure (stored in AppSettings)
+    const albumFolderVal = appSettings.album_folder_structure ?? "__same__";
+    const albumFolderSelect = document.getElementById("cfg-album-folder-structure-select");
+    const knownAlbumOptions = Array.from(albumFolderSelect.options).map((o) => o.value).filter((v) => v !== "__custom__");
+    if (knownAlbumOptions.includes(albumFolderVal)) {
+      albumFolderSelect.value = albumFolderVal;
+      document.getElementById("cfg-album-folder-structure-custom-row").classList.add("hidden");
+    } else {
+      albumFolderSelect.value = "__custom__";
+      document.getElementById("cfg-album-folder-structure").value = albumFolderVal;
+      document.getElementById("cfg-album-folder-structure-custom-row").classList.remove("hidden");
+    }
     document.getElementById("cfg-exif").checked = cfg.download?.set_exif_datetime ?? false;
     document.getElementById("cfg-skip-videos").checked = cfg.filters?.skip_videos ?? false;
     document.getElementById("cfg-skip-photos").checked = cfg.filters?.skip_photos ?? false;
@@ -579,6 +603,14 @@ document.getElementById("cfg-albums-all").addEventListener("change", (e) => {
   document.getElementById("cfg-albums-row").classList.toggle("hidden", e.target.checked);
 });
 
+document.getElementById("cfg-folder-structure-select").addEventListener("change", (e) => {
+  document.getElementById("cfg-folder-structure-custom-row").classList.toggle("hidden", e.target.value !== "__custom__");
+});
+
+document.getElementById("cfg-album-folder-structure-select").addEventListener("change", (e) => {
+  document.getElementById("cfg-album-folder-structure-custom-row").classList.toggle("hidden", e.target.value !== "__custom__");
+});
+
 document.getElementById("cfg-use-system-kei").addEventListener("change", (e) => {
   document.getElementById("system-kei-warning").classList.toggle("hidden", !e.target.checked);
 });
@@ -597,7 +629,22 @@ async function saveSettings() {
   const domain = document.getElementById("cfg-domain").value;
   const directory = document.getElementById("cfg-directory").value.trim();
   const threads = parseInt(document.getElementById("cfg-threads").value, 10);
-  const folderStructure = document.getElementById("cfg-folder-structure").value.trim();
+  const folderSelectVal = document.getElementById("cfg-folder-structure-select").value;
+  const folderStructureBase = folderSelectVal === "__custom__"
+    ? document.getElementById("cfg-folder-structure").value.trim()
+    : folderSelectVal;
+
+  const albumFolderSelectVal = document.getElementById("cfg-album-folder-structure-select").value;
+  const albumFolderStructure = albumFolderSelectVal === "__custom__"
+    ? document.getElementById("cfg-album-folder-structure").value.trim()
+    : albumFolderSelectVal;
+
+  // Compute the value written to kei's config. {album} must always be present so
+  // kei can separate album and non-album photos. For "same", prefix the base
+  // pattern with {album}/; for an explicit album pattern it's already included.
+  const folderStructure = albumFolderStructure === "__same__"
+    ? (folderStructureBase ? `{album}/${folderStructureBase}` : "{album}")
+    : albumFolderStructure;
   const setExif = document.getElementById("cfg-exif").checked;
   const skipVideos = document.getElementById("cfg-skip-videos").checked;
   const skipPhotos = document.getElementById("cfg-skip-photos").checked;
@@ -637,7 +684,11 @@ async function saveSettings() {
   try {
     await Promise.all([
       invoke("save_config", { config }),
-      invoke("save_app_settings", { settings: { use_system_kei: useSystemKei, all_albums: albumsAll } }),
+      invoke("save_app_settings", { settings: {
+        use_system_kei: useSystemKei,
+        all_albums: albumsAll,
+        album_folder_structure: albumFolderStructure === "__same__" ? null : albumFolderStructure,
+      } }),
     ]);
     document.getElementById("settings-required-notice").classList.add("hidden");
     const msg = document.getElementById("settings-saved-msg");

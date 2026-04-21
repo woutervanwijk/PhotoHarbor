@@ -826,6 +826,9 @@ pub struct AppSettings {
     /// When true, passes `-a all` to `kei sync` rather than storing ["all"] in
     /// kei's TOML (which kei interprets as a literal album name and errors).
     pub all_albums: Option<bool>,
+    /// Folder structure pattern for album photos (e.g. "{album}/%Y/%m/%d").
+    /// When None/"__same__", album photos use the same pattern as non-album photos.
+    pub album_folder_structure: Option<String>,
 }
 
 fn app_settings_path() -> Result<std::path::PathBuf, String> {

@@ -187,9 +187,35 @@
               </div>
             </div>
             <div class="form-row">
-              <label for="cfg-folder-structure">Folder Structure</label>
+              <label for="cfg-folder-structure-select">Folder Structure</label>
+              <select id="cfg-folder-structure-select">
+                <option value="">Flat (no subfolders)</option>
+                <option value="%Y">Year</option>
+                <option value="%Y/%m">Year / Month</option>
+                <option value="%Y/%m/%d" selected>Year / Month / Day</option>
+                <option value="__custom__">Custom…</option>
+              </select>
+            </div>
+            <div class="form-row hidden" id="cfg-folder-structure-custom-row">
+              <label for="cfg-folder-structure">Custom Pattern</label>
               <input type="text" id="cfg-folder-structure" placeholder="%Y/%m/%d" />
-              <span class="form-hint">strftime format. Use <code>{album}</code> as the first segment for per-album subfolders, e.g. <code>{album}/%Y/%m/%d</code>. Photos not in any album land at the path without the <code>{album}</code> prefix. Leave blank for a flat structure.</span>
+              <span class="form-hint">strftime format, e.g. <code>%Y/%m/%d</code>. Leave blank for a flat structure.</span>
+            </div>
+            <div class="form-row">
+              <label for="cfg-album-folder-structure-select">Album Folder Structure</label>
+              <select id="cfg-album-folder-structure-select">
+                <option value="__same__">Same as Folder Structure</option>
+                <option value="{album}/%Y/%m/%d">Album / Year / Month / Day</option>
+                <option value="{album}/%Y/%m">Album / Year / Month</option>
+                <option value="{album}/%Y">Album / Year</option>
+                <option value="{album}">Album (flat)</option>
+                <option value="__custom__">Custom…</option>
+              </select>
+            </div>
+            <div class="form-row hidden" id="cfg-album-folder-structure-custom-row">
+              <label for="cfg-album-folder-structure">Custom Album Pattern</label>
+              <input type="text" id="cfg-album-folder-structure" placeholder="{album}/%Y/%m/%d" />
+              <span class="form-hint">Use <code>{album}</code> for the album name. Photos not in any album land at the path without the <code>{album}</code> segment.</span>
             </div>
           </div>
 
