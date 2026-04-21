@@ -683,7 +683,7 @@ html, body {
   align-items: baseline;
   gap: 12px;
   padding: 6px 0;
-  border-bottom: 1px solid var(--card-border);
+  /* border-bottom: 1px solid var(--card-border); */
 }
 
 .form-row:last-of-type { border-bottom: none; }
