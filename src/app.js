@@ -174,7 +174,9 @@ function appendGlobalLog(raw) {
     globalLog.firstElementChild.remove();
   }
   if (logPanelOpen) {
-    globalLog.scrollTop = globalLog.scrollHeight;
+    // Only auto-scroll if the user is already at (or within 60px of) the bottom.
+    const atBottom = globalLog.scrollHeight - globalLog.scrollTop - globalLog.clientHeight < 60;
+    if (atBottom) globalLog.scrollTop = globalLog.scrollHeight;
   } else {
     logUnread = true;
     logBadge.classList.add("visible");
