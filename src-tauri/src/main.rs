@@ -480,11 +480,19 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
         emit_log(&app, vec!["── Cleared stale kei lock file ──".to_string()]);
     }
 
-    // "All Albums" means no -a filter at all — kei syncs everything when -a is omitted.
-    emit_log(&app, vec![format!("$ {} sync", kei_bin)]);
+    let all_albums = app_settings.all_albums.unwrap_or(false);
+    let cmdline = if all_albums {
+        format!("$ {} sync -a all", kei_bin)
+    } else {
+        format!("$ {} sync", kei_bin)
+    };
+    emit_log(&app, vec![cmdline]);
 
     let mut cmd = Command::new(&kei_bin);
     cmd.arg("sync");
+    if all_albums {
+        cmd.args(["-a", "all"]);
+    }
     let mut child = cmd
         .stdin(Stdio::piped())   // kept open so we can write password/2FA responses
         .stdout(Stdio::piped())

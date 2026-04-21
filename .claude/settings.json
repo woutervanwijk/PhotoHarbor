@@ -32,7 +32,8 @@
       "Bash(tar -tzf -)",
       "Bash(brew upgrade *)",
       "Bash(kei logout *)",
-      "Bash(kei list *)"
+      "Bash(kei list *)",
+      "Bash(python3 -m json.tool)"
     ],
     "additionalDirectories": [
       "/private/tmp/kei-update"
