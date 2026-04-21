@@ -33,7 +33,12 @@
       "Bash(brew upgrade *)",
       "Bash(kei logout *)",
       "Bash(kei list *)",
-      "Bash(python3 -m json.tool)"
+      "Bash(python3 -m json.tool)",
+      "Bash(chmod +x \"/Users/wouter/code/Kei PhotoSync/scripts/clean.sh\")",
+      "Bash(file \"/Users/wouter/code/Kei PhotoSync/src-tauri/icons/\"*)",
+      "Bash(rustc --version)",
+      "Bash(cargo --version)",
+      "Bash(npx @tauri-apps/cli icon src-tauri/icons/icon.png)"
     ],
     "additionalDirectories": [
       "/private/tmp/kei-update"

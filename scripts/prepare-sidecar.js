@@ -40,6 +40,9 @@ function assetForTriple(triple) {
 // ── Target triple from rustc ──────────────────────────────────────────────────
 
 function getTargetTriple() {
+  // Allow CI to override (needed for macOS universal builds where both
+  // aarch64-apple-darwin and x86_64-apple-darwin sidecars must be present).
+  if (process.env.TAURI_TARGET_TRIPLE) return process.env.TAURI_TARGET_TRIPLE;
   try {
     const out = execSync("rustc -vV", { encoding: "utf8" });
     const m = out.match(/^host:\s+(.+)$/m);
@@ -56,6 +59,9 @@ function fetchJson(url) {
   return new Promise((resolve, reject) => {
     const opts = new URL(url);
     opts.headers = { "User-Agent": "kei-photosync-prepare-script" };
+    if (process.env.GITHUB_TOKEN) {
+      opts.headers["Authorization"] = `Bearer ${process.env.GITHUB_TOKEN}`;
+    }
     https.get(opts, (res) => {
       if (res.statusCode === 302 || res.statusCode === 301) {
         return fetchJson(res.headers.location).then(resolve).catch(reject);
