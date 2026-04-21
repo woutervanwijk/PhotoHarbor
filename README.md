@@ -14,6 +14,21 @@ The kei binary is bundled inside the app — end users do not need to install it
 | Windows 10+ | Supported; native window decorations |
 | Linux | Supported; native window decorations |
 
+
+## 🖥️ Installing the macOS App
+
+The macOS build is not notarized, so Gatekeeper will block it on first launch. To open it anyway:
+
+**Option 1 — System Settings**
+1. Try to open the app normally — it will be blocked
+2. Go to **System Settings → Privacy & Security**
+3. Scroll down and click **Open Anyway** next to the blocked app
+
+**Option 2 — Terminal (removes the quarantine flag permanently)**
+```bash
+xattr -cr "/Applications/Kei PhotoSync.app"
+```
+
 ## Requirements (for building from source)
 
 - Rust + Cargo (via [rustup](https://rustup.rs))
