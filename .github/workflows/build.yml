@@ -74,6 +74,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_TARGET_TRIPLE: x86_64-apple-darwin
 
+      - name: Combine sidecars into universal binary
+        if: matrix.os == 'macos-latest'
+        run: |
+          lipo -create \
+            src-tauri/binaries/kei-aarch64-apple-darwin \
+            src-tauri/binaries/kei-x86_64-apple-darwin \
+            -output src-tauri/binaries/kei-universal-apple-darwin
+          chmod +x src-tauri/binaries/kei-universal-apple-darwin
+
       - name: Prepare sidecar
         if: matrix.os != 'macos-latest'
         run: node scripts/prepare-sidecar.js
