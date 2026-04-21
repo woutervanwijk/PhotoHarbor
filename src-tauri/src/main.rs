@@ -218,16 +218,18 @@ async fn get_status(state: State<'_, AppState>) -> Result<SyncStatus, String> {
         let conn = rusqlite::Connection::open(&db).map_err(|e| e.to_string())?;
 
         let total_assets: i64 = conn
-            .query_row("SELECT COUNT(*) FROM assets", [], |r| r.get(0))
+            .query_row("SELECT COUNT(*) FROM assets WHERE is_deleted = 0", [], |r| r.get(0))
             .unwrap_or(0);
         let downloaded: i64 = conn
-            .query_row("SELECT COUNT(*) FROM assets WHERE status = 'downloaded'", [], |r| r.get(0))
+            .query_row("SELECT COUNT(*) FROM assets WHERE status = 'downloaded' AND is_deleted = 0", [], |r| r.get(0))
             .unwrap_or(0);
         let pending: i64 = conn
-            .query_row("SELECT COUNT(*) FROM assets WHERE status = 'pending'", [], |r| r.get(0))
+            .query_row("SELECT COUNT(*) FROM assets WHERE status = 'pending' AND is_deleted = 0 AND (last_error IS NULL OR last_error = '')", [], |r| r.get(0))
             .unwrap_or(0);
+        // kei has no 'failed' status — assets that repeatedly error stay 'pending'
+        // with last_error set.
         let failed: i64 = conn
-            .query_row("SELECT COUNT(*) FROM assets WHERE status = 'failed'", [], |r| r.get(0))
+            .query_row("SELECT COUNT(*) FROM assets WHERE status = 'pending' AND is_deleted = 0 AND last_error IS NOT NULL AND last_error != ''", [], |r| r.get(0))
             .unwrap_or(0);
 
         // Last sync_run row

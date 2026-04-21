@@ -295,12 +295,14 @@ listen("sync-completed", () => {
   setSyncRunning(false);
   appendLog("── Sync completed ──", "success");
   appendGlobalLog("── Sync completed ──");
+  loadDashboard();
 });
 listen("sync-failed", (event) => {
   setSyncRunning(false);
   appendLog(`── Sync failed: ${event.payload} ──`, "err");
   appendGlobalLog(`── Sync failed: ${event.payload} ──`);
   badge.classList.add("error");
+  loadDashboard();
   if (_retryAfterLockClear) {
     _retryAfterLockClear = false;
     setTimeout(() => doStartSync(), 500);
