@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { getVersion } from "@tauri-apps/api/app";
 import { parseLine, renderEntry, stripAnsi, dedupKey } from "./log-parsers.js";
 
 // ---------------------------------------------------------------------------
@@ -625,6 +626,33 @@ document.getElementById("cfg-directory-pick").addEventListener("click", async ()
 
 document.getElementById("auth-wiki-btn").addEventListener("click", () => {
   invoke("open_url", { url: "https://github.com/rhoopr/kei/wiki/Authentication" });
+});
+
+// ---------------------------------------------------------------------------
+// About Modal
+// ---------------------------------------------------------------------------
+
+const aboutOverlay = document.getElementById("modal-about-overlay");
+
+document.getElementById("sidebar-header").addEventListener("click", async () => {
+  const version = await getVersion().catch(() => "—");
+  document.getElementById("about-version").textContent = `Version ${version}`;
+  aboutOverlay.classList.remove("hidden");
+});
+
+document.getElementById("about-close-btn").addEventListener("click", () => {
+  aboutOverlay.classList.add("hidden");
+});
+
+aboutOverlay.addEventListener("click", (e) => {
+  if (e.target === aboutOverlay) aboutOverlay.classList.add("hidden");
+});
+
+document.querySelectorAll("#modal-about [data-url]").forEach((a) => {
+  a.addEventListener("click", (e) => {
+    e.preventDefault();
+    invoke("open_url", { url: a.dataset.url });
+  });
 });
 
 async function saveSettings() {

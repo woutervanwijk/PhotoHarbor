@@ -11,7 +11,7 @@
     <!-- Sidebar -->
     <nav id="sidebar">
       <div id="sidebar-drag-region"></div>
-      <div id="sidebar-header">
+      <div id="sidebar-header" role="button" title="About Kei PhotoSync">
         <img class="app-icon" src="src/app-icon.png" alt="Kei PhotoSync" />
         <span class="app-name">Kei PhotoSync</span>
       </div>
@@ -27,6 +27,21 @@
         </li>
       </ul>
     </nav>
+
+    <!-- About Modal -->
+    <div id="modal-about-overlay" class="hidden">
+      <div id="modal-about">
+        <img class="about-icon" src="src/app-icon.png" alt="Kei PhotoSync" />
+        <h2 class="about-name">Kei PhotoSync</h2>
+        <p class="about-version" id="about-version">—</p>
+        <p class="about-tagline">Synchronize your iCloud photos to your own machine<br><span class="about-tagline-sub">(More services other than iCloud to come)</span></p>
+        <div class="about-copy">
+          <p>Copyright &copy; 2026 <a href="#" data-url="https://github.com/woutervanwijk/Kei-PhotoSync">Wouter van Wijk</a></p>
+          <p>The hard work (syncing) fully done by Kei<br>Copyright &copy; 2026 <a href="#" data-url="https://github.com/rhoopr/kei">Rob Hooper</a></p>
+        </div>
+        <button type="button" class="btn-primary" id="about-close-btn">Close</button>
+      </div>
+    </div>
 
     <!-- Right column: toolbar + content + log panel -->
     <div id="right-col">
