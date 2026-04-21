@@ -186,17 +186,8 @@ html, body {
 .app-icon {
   width: 28px;
   height: 28px;
-  background: linear-gradient(135deg, #007aff, #00c7ff);
   border-radius: 7px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 800;
-  letter-spacing: -0.5px;
   flex-shrink: 0;
-  font-family: var(--font);
 }
 
 .app-name { font-size: 13px; font-weight: 600; }
