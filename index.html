@@ -10,7 +10,7 @@
   <div id="app">
     <!-- Sidebar -->
     <nav id="sidebar">
-      <div id="sidebar-drag-region"></div>
+      <div id="sidebar-drag-region" data-tauri-drag-region></div>
       <div id="sidebar-header" role="button" title="About Kei PhotoSync">
         <img class="app-icon" src="src/app-icon.png" alt="Kei PhotoSync" />
         <span class="app-name">Kei PhotoSync</span>
@@ -47,7 +47,7 @@
     <div id="right-col">
 
     <!-- Toolbar (sits in the macOS title-bar drag zone) -->
-    <div id="toolbar">
+    <div id="toolbar" data-tauri-drag-region>
       <span id="toolbar-title"></span>
       <div id="toolbar-actions">
         <button type="button" class="btn-ghost toolbar-btn" id="log-toggle-btn" title="Toggle output log">

@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getVersion } from "@tauri-apps/api/app";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { parseLine, renderEntry, stripAnsi, dedupKey } from "./log-parsers.js";
 
 // ---------------------------------------------------------------------------
@@ -11,6 +12,16 @@ import { parseLine, renderEntry, stripAnsi, dedupKey } from "./log-parsers.js";
 const views = document.querySelectorAll(".view");
 const navItems = document.querySelectorAll(".nav-item");
 const toolbarTitle = document.getElementById("toolbar-title");
+
+// Window dragging — use startDragging() on mousedown in drag zones.
+// CSS -webkit-app-region and data-tauri-drag-region are unreliable in Tauri v2.
+const appWindow = getCurrentWindow();
+const DRAG_TARGETS = ["toolbar", "toolbar-title", "sidebar-drag-region"];
+document.addEventListener("mousedown", (e) => {
+  if (DRAG_TARGETS.includes(e.target.id)) {
+    appWindow.startDragging();
+  }
+});
 
 const VIEW_TITLES = { sync: "Sync", history: "History", settings: "Settings" };
 
