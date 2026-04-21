@@ -12,11 +12,6 @@
 // first matching parser wins. Unmatched lines fall back to a raw text entry.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Detect whether the system locale uses 12-hour (AM/PM) or 24-hour time.
-// We check once at startup by seeing if the default formatter emits a dayPeriod part.
-const SYSTEM_HOUR12 = new Intl.DateTimeFormat(undefined, { hour: "numeric" })
-  .formatToParts(new Date())
-  .some((p) => p.type === "dayPeriod");
 
 // ── ANSI stripping ────────────────────────────────────────────────────────────
 
@@ -164,7 +159,7 @@ registerParser({
     const { message, fields } = extractFields(rest);
     const localTime = new Date(timestamp).toLocaleTimeString(undefined, {
       hour: "2-digit", minute: "2-digit", second: "2-digit",
-      hour12: SYSTEM_HOUR12,
+      hour12: false,
     });
     return { _type: "kei-tracing", timestamp, time: localTime, level, module, message, fields };
   },
