@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 /**
- * Downloads the latest kei release from GitHub and places it in
+ * Downloads a kei release from GitHub and places it in
  * src-tauri/binaries/ with the target-triple suffix Tauri requires.
  *
- * Works on macOS, Linux, and Windows (no extra npm packages needed).
+ * The downloaded version is pinned in src-tauri/binaries/.kei-version so that
+ * cross-platform builds (e.g. building Windows on macOS) always use the same
+ * version as the native binary — not whatever happens to be latest.
  *
- *   node scripts/prepare-sidecar.js          # always fetches latest
- *   node scripts/prepare-sidecar.js --force  # re-download even if current
+ *   node scripts/prepare-sidecar.js          # use pinned version (or latest on first run)
+ *   node scripts/prepare-sidecar.js --force  # fetch latest and update the pin
  */
 
 const https = require("https");
@@ -17,8 +19,18 @@ const { execSync } = require("child_process");
 
 const REPO = "rhoopr/kei";
 const BIN_DIR = path.join(__dirname, "..", "src-tauri", "binaries");
+const VERSION_FILE = path.join(BIN_DIR, ".kei-version");
 const isWindows = process.platform === "win32";
 const force = process.argv.includes("--force");
+
+function getPinnedVersion() {
+  try {
+    const v = fs.readFileSync(VERSION_FILE, "utf8").trim();
+    return v || null;
+  } catch {
+    return null;
+  }
+}
 
 // ── Map Rust target triple → GitHub asset name ───────────────────────────────
 
@@ -139,9 +151,18 @@ function extract(archivePath, ext, outDir) {
   }
 
   console.log(`Target triple: ${triple}`);
-  console.log(`Fetching latest release from github.com/${REPO}…`);
 
-  const release = await fetchJson(`https://api.github.com/repos/${REPO}/releases/latest`);
+  const pinnedVersion = force ? null : getPinnedVersion();
+  if (pinnedVersion) {
+    console.log(`Using pinned kei version: ${pinnedVersion} (run with --force to update)`);
+  } else {
+    console.log(`Fetching latest release from github.com/${REPO}…`);
+  }
+  const releaseUrl = pinnedVersion
+    ? `https://api.github.com/repos/${REPO}/releases/tags/${pinnedVersion}`
+    : `https://api.github.com/repos/${REPO}/releases/latest`;
+
+  const release = await fetchJson(releaseUrl);
   const tag = release.tag_name;
   const asset = (release.assets || []).find((a) => a.name === assetName);
 
@@ -174,7 +195,10 @@ function extract(archivePath, ext, outDir) {
     fs.copyFileSync(extractedBin, destPath);
     if (!isWindows) fs.chmodSync(destPath, 0o755);
 
-    console.log(`Installed: ${destPath}`);
+    // Pin the version so cross-platform builds use the same release.
+    fs.writeFileSync(VERSION_FILE, tag + "\n");
+
+    console.log(`Installed: ${destPath} (${tag})`);
     console.log(`Done — you can now run 'npm run dev' or 'npm run build'.`);
   } finally {
     // Clean up temp files
