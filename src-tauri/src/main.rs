@@ -164,17 +164,6 @@ async fn save_config(mut config: KeiConfig) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    // folder_structure is owned by AppSettings and written by start_sync.
-    // Preserve whatever kei's TOML currently has so save_config never strips it,
-    // which would cause kei to detect a config change on the next sync.
-    if config.download.as_ref().and_then(|d| d.folder_structure.as_ref()).is_none() {
-        if let Some(existing_fs) = get_config().await.ok()
-            .and_then(|c| c.download)
-            .and_then(|d| d.folder_structure)
-        {
-            config.download.get_or_insert_with(Default::default).folder_structure = Some(existing_fs);
-        }
-    }
     let content = toml::to_string_pretty(&config).map_err(|e| e.to_string())?;
     std::fs::write(&path, content).map_err(|e| e.to_string())
 }
@@ -470,33 +459,20 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
         }
     }
 
-    // Compute folder_structure from AppSettings and write to kei's TOML only if
-    // the value changed — writing an identical value would still cause kei to
-    // detect a config change and re-verify all files.
-    {
-        let base = app_settings.folder_structure.as_deref().unwrap_or("%Y/%m/%d");
-        let kei_folder_structure = match app_settings.album_folder_structure.as_deref() {
-            None | Some("") => {
-                if base.is_empty() {
-                    "{album}".to_string()
-                } else {
-                    format!("{{album}}/{}", base)
-                }
-            }
-            Some(album_pattern) => album_pattern.to_string(),
-        };
-        let mut cfg_to_write = get_config().await.unwrap_or_default();
-        let current = cfg_to_write.download.as_ref()
-            .and_then(|d| d.folder_structure.as_deref())
-            .unwrap_or("");
-        if current != kei_folder_structure {
-            cfg_to_write.download.get_or_insert_with(Default::default).folder_structure =
-                Some(kei_folder_structure);
-            if let (Ok(path), Ok(content)) = (config_path(), toml::to_string_pretty(&cfg_to_write)) {
-                let _ = std::fs::write(path, content);
+    // Compute folder_structure from AppSettings; passed as --folder-structure CLI
+    // arg so we never touch kei's config.toml (which would trigger "Config changed
+    // — verifying all files" on every sync due to TOML serialization differences).
+    let base = app_settings.folder_structure.as_deref().unwrap_or("%Y/%m");
+    let kei_folder_structure = match app_settings.album_folder_structure.as_deref() {
+        None | Some("") => {
+            if base.is_empty() {
+                "{album}".to_string()
+            } else {
+                format!("{{album}}/{}", base)
             }
         }
-    }
+        Some(album_pattern) => album_pattern.to_string(),
+    };
 
     // Clear any stale lock file left by a previous hard-quit before launching kei.
     // This avoids the "Session lock held by another instance" error on restart.
@@ -515,6 +491,9 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
 
     let mut cmd = Command::new(&kei_bin);
     cmd.arg("sync");
+    if !kei_folder_structure.is_empty() {
+        cmd.args(["--folder-structure", &kei_folder_structure]);
+    }
     if all_albums {
         cmd.args(["-a", "all"]);
     }

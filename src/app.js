@@ -537,7 +537,7 @@ async function loadSettings() {
     document.getElementById("cfg-directory").value = cfg.download?.directory ?? "";
     document.getElementById("cfg-threads").value = cfg.download?.threads_num ?? "";
     // Folder structure (non-album) — stored in AppSettings, not kei's TOML
-    const folderStructureVal = appSettings.folder_structure ?? "%Y/%m/%d";
+    const folderStructureVal = appSettings.folder_structure ?? "%Y/%m";
     const folderSelect = document.getElementById("cfg-folder-structure-select");
     const knownFolderOptions = Array.from(folderSelect.options).map((o) => o.value).filter((v) => v !== "__custom__");
     if (knownFolderOptions.includes(folderStructureVal)) {
@@ -550,7 +550,7 @@ async function loadSettings() {
     }
 
     // Album folder structure (stored in AppSettings)
-    const albumFolderVal = appSettings.album_folder_structure ?? "__same__";
+    const albumFolderVal = appSettings.album_folder_structure ?? "{album}";
     const albumFolderSelect = document.getElementById("cfg-album-folder-structure-select");
     const knownAlbumOptions = Array.from(albumFolderSelect.options).map((o) => o.value).filter((v) => v !== "__custom__");
     if (knownAlbumOptions.includes(albumFolderVal)) {
@@ -723,7 +723,7 @@ async function saveSettings() {
         use_system_kei: useSystemKei,
         all_albums: albumsAll,
         folder_structure: folderStructureBase || null,
-        album_folder_structure: albumFolderStructure === "__same__" ? null : albumFolderStructure,
+        album_folder_structure: albumFolderStructure || null,
       } }),
     ]);
     document.getElementById("settings-required-notice").classList.add("hidden");

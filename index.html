@@ -219,11 +219,10 @@
             <div class="form-row">
               <label for="cfg-album-folder-structure-select">Album Folder Structure</label>
               <select id="cfg-album-folder-structure-select">
-                <option value="__same__">Same as Folder Structure</option>
-                <option value="{album}/%Y/%m/%d">Album / Year / Month / Day</option>
+                <option value="{album}" selected>Album (flat)</option>
                 <option value="{album}/%Y/%m">Album / Year / Month</option>
+                <option value="{album}/%Y/%m/%d">Album / Year / Month / Day</option>
                 <option value="{album}/%Y">Album / Year</option>
-                <option value="{album}">Album (flat)</option>
                 <option value="__custom__">Custom…</option>
               </select>
             </div>
