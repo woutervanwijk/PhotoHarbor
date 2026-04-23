@@ -344,9 +344,17 @@ fn is_lock_error(line: &str) -> bool {
 #[tauri::command]
 async fn list_kei_albums() -> Result<Vec<String>, String> {
     let kei_bin = resolve_kei_bin().await?;
+    let config = get_config().await.unwrap_or_default();
+    let username = config.auth.as_ref().and_then(|a| a.username.clone()).unwrap_or_default();
 
-    let output = Command::new(&kei_bin)
-        .args(["list", "albums"])
+    let mut cmd = Command::new(&kei_bin);
+    cmd.args(["list", "albums"]);
+    if !username.is_empty() {
+        cmd.args(["--username", &username]);
+    }
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+    let output = cmd
         .output()
         .await
         .map_err(|e| format!("Failed to run kei list albums: {e}"))?;
@@ -507,6 +515,8 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
     }
 
     let all_albums = app_settings.all_albums.unwrap_or(false);
+    let username = kei_cfg.auth.as_ref().and_then(|a| a.username.clone()).unwrap_or_default();
+
     let cmdline = if all_albums {
         format!("$ {} sync -a all", kei_bin)
     } else {
@@ -516,9 +526,14 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
 
     let mut cmd = Command::new(&kei_bin);
     cmd.arg("sync");
+    if !username.is_empty() {
+        cmd.args(["--username", &username]);
+    }
     if all_albums {
         cmd.args(["-a", "all"]);
     }
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
     let mut child = cmd
         .stdin(Stdio::piped())   // kept open so we can write password/2FA responses
         .stdout(Stdio::piped())
@@ -730,8 +745,11 @@ async fn request_2fa_code(app: AppHandle) -> Result<(), String> {
     let kei_bin = resolve_kei_bin().await?;
     emit_log(&app, vec![format!("$ {} login get-code", kei_bin)]);
 
-    let output = Command::new(&kei_bin)
-        .args(["login", "get-code"])
+    let mut cmd = Command::new(&kei_bin);
+    cmd.args(["login", "get-code"]);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+    let output = cmd
         .output()
         .await
         .map_err(|e| format!("Failed to run kei login get-code: {e}"))?;
@@ -779,8 +797,11 @@ async fn submit_2fa(app: AppHandle, code: String) -> Result<(), String> {
     // Log with masked code so credentials don't appear in the output panel.
     emit_log(&app, vec![format!("$ {} login submit-code ******", kei_bin)]);
 
-    let output = Command::new(&kei_bin)
-        .args(["login", "submit-code", &trimmed])
+    let mut cmd = Command::new(&kei_bin);
+    cmd.args(["login", "submit-code", &trimmed]);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+    let output = cmd
         .output()
         .await
         .map_err(|e| format!("Failed to run kei login submit-code: {e}"))?;
@@ -935,7 +956,12 @@ fn find_system_kei() -> Option<String> {
 
     // Resolve via the user's login shell so we get the same PATH as the terminal.
     #[cfg(target_os = "windows")]
-    let output = std::process::Command::new("where").arg("kei").output();
+    let output = {
+        use std::os::windows::process::CommandExt;
+        let mut cmd = std::process::Command::new("where");
+        cmd.arg("kei").creation_flags(0x08000000);
+        cmd.output()
+    };
 
     #[cfg(target_os = "macos")]
     let output = std::process::Command::new("/bin/zsh")
@@ -984,7 +1010,11 @@ pub struct KeiVersions {
 }
 
 async fn kei_version(path: &str) -> Option<String> {
-    let out = Command::new(path).arg("--version").output().await.ok()?;
+    let mut cmd = Command::new(path);
+    cmd.arg("--version");
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+    let out = cmd.output().await.ok()?;
     let s = String::from_utf8_lossy(&out.stdout);
     let v = s.trim().to_string();
     if v.is_empty() { None } else { Some(v) }
@@ -1027,10 +1057,14 @@ async fn open_url(url: String) -> Result<(), String> {
         .spawn()
         .map_err(|e| e.to_string())?;
     #[cfg(target_os = "windows")]
-    std::process::Command::new("cmd")
-        .args(["/c", "start", "", &url])
-        .spawn()
-        .map_err(|e| e.to_string())?;
+    {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("cmd")
+            .args(["/c", "start", "", &url])
+            .creation_flags(0x08000000)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
