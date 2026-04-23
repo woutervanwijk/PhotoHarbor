@@ -127,7 +127,8 @@ function extract(archivePath, ext, outDir) {
 (async () => {
   const triple = getTargetTriple();
   const { name: assetName, ext } = assetForTriple(triple);
-  const destBin = isWindows ? `kei-${triple}.exe` : `kei-${triple}`;
+  const targetIsWindows = triple.includes("windows") || isWindows;
+  const destBin = targetIsWindows ? `kei-${triple}.exe` : `kei-${triple}`;
   const destPath = path.join(BIN_DIR, destBin);
 
   // Check if already up-to-date (unless --force)
@@ -161,8 +162,10 @@ function extract(archivePath, ext, outDir) {
     console.log("  Extracting…");
     extract(archivePath, ext, tmpDir);
 
-    // Find the extracted binary (kei or kei.exe)
-    const extractedBin = path.join(tmpDir, isWindows ? "kei.exe" : "kei");
+    // Find the extracted binary (kei or kei.exe) — use the target triple, not
+    // the host platform, so macOS cross-builds for Windows find kei.exe.
+    const targetIsWindows = triple.includes("windows") || isWindows;
+    const extractedBin = path.join(tmpDir, targetIsWindows ? "kei.exe" : "kei");
     if (!fs.existsSync(extractedBin)) {
       throw new Error(`Expected binary not found after extraction: ${extractedBin}`);
     }

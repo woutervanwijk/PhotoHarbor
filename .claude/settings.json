@@ -38,7 +38,8 @@
       "Bash(file \"/Users/wouter/code/Kei PhotoSync/src-tauri/icons/\"*)",
       "Bash(rustc --version)",
       "Bash(cargo --version)",
-      "Bash(npx @tauri-apps/cli icon src-tauri/icons/icon.png)"
+      "Bash(npx @tauri-apps/cli icon src-tauri/icons/icon.png)",
+      "Bash(brew list *)"
     ],
     "additionalDirectories": [
       "/private/tmp/kei-update"
