@@ -25,6 +25,7 @@ pub struct KeiConfig {
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct AuthConfig {
     pub username: Option<String>,
+    pub password: Option<String>,
     pub domain: Option<String>,
 }
 
@@ -516,6 +517,7 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
 
     let all_albums = app_settings.all_albums.unwrap_or(false);
     let username = kei_cfg.auth.as_ref().and_then(|a| a.username.clone()).unwrap_or_default();
+    let password = kei_cfg.auth.as_ref().and_then(|a| a.password.clone()).unwrap_or_default();
 
     let cmdline = if all_albums {
         format!("$ {} sync -a all", kei_bin)
@@ -586,6 +588,9 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
     }
     if all_albums {
         cmd.args(["-a", "all"]);
+    }
+    if !password.is_empty() {
+        cmd.env("ICLOUD_PASSWORD", &password);
     }
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000);

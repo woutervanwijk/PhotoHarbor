@@ -89,7 +89,7 @@ async function loadDashboard() {
     document.getElementById("last-dl-failed").textContent = fmtNum(status.last_run_failed);
 
     const noConfig = document.getElementById("dashboard-no-config");
-    const isConfigured = !!(cfg.auth?.username && cfg.download?.directory);
+    const isConfigured = !!(cfg.auth?.username && cfg.auth?.password && cfg.download?.directory);
     noConfig.classList.toggle("hidden", isConfigured);
   } catch (err) {
     console.error("get_status error:", err);
@@ -324,6 +324,7 @@ async function doStartSync() {
     const cfg = await invoke("get_config");
     const missing = [];
     if (!cfg.auth?.username)       missing.push("iCloud Username");
+    if (!cfg.auth?.password)       missing.push("Apple ID Password");
     if (!cfg.download?.directory)  missing.push("Download Directory");
     if (missing.length > 0) {
       const detail = `Please set: ${missing.join(", ")}.`;
@@ -533,6 +534,7 @@ async function loadSettings() {
     ]);
 
     document.getElementById("cfg-username").value = cfg.auth?.username ?? "";
+    document.getElementById("cfg-password").value = cfg.auth?.password ?? "";
     document.getElementById("cfg-domain").value = cfg.auth?.domain ?? "com";
     document.getElementById("cfg-directory").value = cfg.download?.directory ?? "";
     document.getElementById("cfg-threads").value = cfg.download?.threads_num ?? "";
@@ -668,6 +670,7 @@ document.querySelectorAll("#modal-about [data-url]").forEach((a) => {
 
 async function saveSettings() {
   const username = document.getElementById("cfg-username").value.trim();
+  const password = document.getElementById("cfg-password").value;
   const domain = document.getElementById("cfg-domain").value;
   const directory = document.getElementById("cfg-directory").value.trim();
   const threads = parseInt(document.getElementById("cfg-threads").value, 10);
@@ -696,6 +699,7 @@ async function saveSettings() {
     log_level: logLevel,
     auth: {
       username: username || null,
+      password: password || null,
       domain: domain !== "com" ? domain : null,
     },
     download: {
