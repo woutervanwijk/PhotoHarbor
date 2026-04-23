@@ -175,14 +175,10 @@
               <label for="cfg-username">iCloud Username</label>
               <input type="email" id="cfg-username" placeholder="you@icloud.com" />
             </div>
-            <div class="form-row">
-              <label for="cfg-password">Apple ID Password</label>
-              <input type="password" id="cfg-password" placeholder="Apple ID password" autocomplete="current-password" />
-            </div>
             <div class="auth-help">
               <div class="auth-help-row">
-                <span class="auth-help-label">Password storage</span>
-                <span class="auth-help-text">Stored in kei's config file. On macOS/Linux kei reads it automatically; on Windows it is passed via environment variable.</span>
+                <span class="auth-help-label">Password</span>
+                <span class="auth-help-text">Not stored here — kei saves credentials in the system keychain. Run <code>kei config setup</code> in a terminal to set your password.</span>
               </div>
               <div class="auth-help-row">
                 <span class="auth-help-label">Two-Factor Auth</span>
