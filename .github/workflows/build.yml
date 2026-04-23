@@ -8,13 +8,6 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
-    inputs:
-      platform:
-        description: "Platform (leave empty for all)"
-        required: false
-        default: ""
-        type: choice
-        options: ["", "macos", "windows", "linux"]
 
 permissions:
   contents: write
@@ -33,11 +26,6 @@ jobs:
             artifact_name: windows
           - os: ubuntu-22.04       # glibc 2.35 — broader Linux compatibility
             artifact_name: linux
-
-    if: >
-      github.event_name != 'workflow_dispatch' ||
-      inputs.platform == '' ||
-      inputs.platform == matrix.artifact_name
 
     steps:
       - uses: actions/checkout@v4
