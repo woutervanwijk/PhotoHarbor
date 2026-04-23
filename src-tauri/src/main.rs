@@ -97,18 +97,14 @@ pub struct AppState {
 /// Returns the kei config directory (~/.config/kei on Linux/macOS,
 /// %APPDATA%\kei on Windows).
 fn kei_config_dir() -> Result<std::path::PathBuf, String> {
+    // kei uses $HOME/.config/kei on all platforms, including Windows where
+    // $HOME / USERPROFILE maps to C:\Users\<name>.
     #[cfg(target_os = "windows")]
-    {
-        std::env::var("APPDATA")
-            .map(|p| std::path::PathBuf::from(p).join("kei"))
-            .map_err(|_| "APPDATA not set".to_string())
-    }
+    let home = std::env::var("USERPROFILE").map_err(|_| "USERPROFILE not set".to_string())?;
     #[cfg(not(target_os = "windows"))]
-    {
-        std::env::var("HOME")
-            .map(|p| std::path::PathBuf::from(p).join(".config/kei"))
-            .map_err(|_| "HOME not set".to_string())
-    }
+    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+
+    Ok(std::path::PathBuf::from(home).join(".config").join("kei"))
 }
 
 fn config_path() -> Result<std::path::PathBuf, String> {
