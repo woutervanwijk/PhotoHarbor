@@ -471,7 +471,7 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
         .is_some_and(|albums| albums.iter().any(|a| a.eq_ignore_ascii_case("all")));
 
     if toml_had_all {
-        let mut clean = kei_cfg;
+        let mut clean = kei_cfg.clone();
         if let Some(ref mut f) = clean.filters {
             f.albums = None;
         }
