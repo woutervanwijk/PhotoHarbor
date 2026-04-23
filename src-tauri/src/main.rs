@@ -483,25 +483,25 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
     // Compute folder_structure from AppSettings and write to kei's TOML only if
     // the value changed — writing an identical value would still cause kei to
     // detect a config change and re-verify all files.
-    {
-        let base = app_settings.folder_structure.as_deref().unwrap_or("%Y/%m/%d");
-        let kei_folder_structure = match app_settings.album_folder_structure.as_deref() {
-            None | Some("") => {
-                if base.is_empty() {
-                    "{album}".to_string()
-                } else {
-                    format!("{{album}}/{}", base)
-                }
+    let base = app_settings.folder_structure.as_deref().unwrap_or("%Y/%m/%d");
+    let kei_folder_structure = match app_settings.album_folder_structure.as_deref() {
+        None | Some("") => {
+            if base.is_empty() {
+                "{album}".to_string()
+            } else {
+                format!("{{album}}/{}", base)
             }
-            Some(album_pattern) => album_pattern.to_string(),
-        };
+        }
+        Some(album_pattern) => album_pattern.to_string(),
+    };
+    {
         let mut cfg_to_write = get_config().await.unwrap_or_default();
         let current = cfg_to_write.download.as_ref()
             .and_then(|d| d.folder_structure.as_deref())
             .unwrap_or("");
         if current != kei_folder_structure {
             cfg_to_write.download.get_or_insert_with(Default::default).folder_structure =
-                Some(kei_folder_structure);
+                Some(kei_folder_structure.clone());
             if let (Ok(path), Ok(content)) = (config_path(), toml::to_string_pretty(&cfg_to_write)) {
                 let _ = std::fs::write(path, content);
             }
@@ -526,8 +526,63 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
 
     let mut cmd = Command::new(&kei_bin);
     cmd.arg("sync");
+
+    // Pass all config values explicitly as CLI arguments so kei works even when
+    // it cannot locate its config file (e.g. on Windows with a path mismatch).
     if !username.is_empty() {
         cmd.args(["--username", &username]);
+    }
+    if let Some(auth) = &kei_cfg.auth {
+        if let Some(domain) = &auth.domain {
+            if !domain.is_empty() {
+                cmd.args(["--domain", domain]);
+            }
+        }
+    }
+    if let Some(download) = &kei_cfg.download {
+        if let Some(dir) = &download.directory {
+            if !dir.is_empty() {
+                cmd.args(["--directory", dir]);
+            }
+        }
+        if let Some(threads) = download.threads_num {
+            cmd.args(["--threads", &threads.to_string()]);
+        }
+        if !kei_folder_structure.is_empty() {
+            cmd.args(["--folder-structure", &kei_folder_structure]);
+        }
+        if download.set_exif_datetime == Some(true) {
+            cmd.arg("--set-exif-datetime");
+        }
+    }
+    if let Some(filters) = &kei_cfg.filters {
+        if filters.skip_videos == Some(true) {
+            cmd.arg("--skip-videos");
+        }
+        if filters.skip_photos == Some(true) {
+            cmd.arg("--skip-photos");
+        }
+        if let Some(recent) = filters.recent {
+            cmd.args(["--recent", &recent.to_string()]);
+        }
+        // Album filters: only pass when not using the "all albums" flag,
+        // which is handled separately below.
+        if !all_albums {
+            if let Some(albums) = &filters.albums {
+                for album in albums {
+                    if !album.is_empty() {
+                        cmd.args(["-a", album]);
+                    }
+                }
+            }
+        }
+        if let Some(exclude_albums) = &filters.exclude_albums {
+            for album in exclude_albums {
+                if !album.is_empty() {
+                    cmd.args(["--exclude-album", album]);
+                }
+            }
+        }
     }
     if all_albums {
         cmd.args(["-a", "all"]);
