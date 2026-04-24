@@ -583,6 +583,7 @@ async function loadSettings() {
 
     const useSystem = appSettings.use_system_kei ?? false;
     document.getElementById("cfg-use-system-kei").checked = useSystem;
+    document.getElementById("cfg-extra-args").value = appSettings.extra_args ?? "";
     document.getElementById("system-kei-warning").classList.toggle("hidden", !useSystem);
   } catch (err) {
     console.error("get_config error:", err);
@@ -691,6 +692,7 @@ async function saveSettings() {
   const watchInterval = parseInt(document.getElementById("cfg-watch-interval").value, 10);
   const logLevel = document.getElementById("cfg-log-level").value || null;
   const useSystemKei = document.getElementById("cfg-use-system-kei").checked;
+  const extraArgs = document.getElementById("cfg-extra-args").value.trim();
 
   const config = {
     log_level: logLevel,
@@ -721,6 +723,7 @@ async function saveSettings() {
       invoke("save_config", { config }),
       invoke("save_app_settings", { settings: {
         use_system_kei: useSystemKei,
+        extra_args: extraArgs || null,
         all_albums: albumsAll,
         folder_structure: folderStructureBase || null,
         album_folder_structure: albumFolderStructure || null,

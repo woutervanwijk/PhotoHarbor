@@ -337,6 +337,11 @@
               <div id="system-kei-warning" class="notice notice--warn hidden">
                 Using a system-installed kei may cause issues if its version differs from the bundled one. Sync behaviour, command flags, and output formats can change between releases.
               </div>
+              <div class="form-row" style="margin-top:12px">
+                <label for="cfg-extra-args">Extra sync arguments</label>
+                <input type="text" id="cfg-extra-args" placeholder="--verbose" />
+                <span class="form-hint">Extra flags appended to <code>kei sync</code>. Space-separated; use with care.</span>
+              </div>
             </div>
 
           </details>

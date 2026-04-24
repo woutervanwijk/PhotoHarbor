@@ -497,6 +497,9 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
     if all_albums {
         cmd.args(["-a", "all"]);
     }
+    if let Some(extra) = &app_settings.extra_args {
+        cmd.args(extra.split_whitespace());
+    }
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000);
     let mut child = cmd
@@ -851,11 +854,13 @@ pub struct AppSettings {
     /// When true, passes `-a all` to `kei sync` rather than storing ["all"] in
     /// kei's TOML (which kei interprets as a literal album name and errors).
     pub all_albums: Option<bool>,
-    /// Base folder structure pattern for non-album photos (e.g. "%Y/%m/%d").
+    /// Base folder structure pattern for non-album photos (e.g. "%Y/%m").
     pub folder_structure: Option<String>,
-    /// Folder structure pattern for album photos (e.g. "{album}/%Y/%m/%d").
-    /// When None, album photos use "{album}/" prepended to folder_structure.
+    /// Folder structure pattern for album photos (e.g. "{album}/%Y/%m").
+    /// When None, defaults to "{album}" (flat).
     pub album_folder_structure: Option<String>,
+    /// Extra flags appended verbatim to `kei sync` (space-separated).
+    pub extra_args: Option<String>,
 }
 
 fn app_settings_path() -> Result<std::path::PathBuf, String> {
