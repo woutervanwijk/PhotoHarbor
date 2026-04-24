@@ -34,19 +34,29 @@ A Tauri v2 cross-platform desktop GUI that wraps the [kei](https://github.com/rh
 | `index.html` | App shell with sidebar navigation and view containers |
 | `src-tauri/tauri.conf.json` | Window config, bundle settings, sidecar declaration |
 | `src-tauri/capabilities/default.json` | Tauri v2 permission grants |
-| `scripts/prepare-sidecar.js` | Copies the local kei binary into `src-tauri/binaries/` for bundling |
+| `src-tauri/binaries/.kei-version` | Pinned kei release tag (committed); used by prepare-sidecar to reproduce the same version |
+| `scripts/prepare-sidecar.js` | Downloads the kei binary from GitHub into `src-tauri/binaries/` for bundling |
+| `scripts/build-windows.sh` | Cross-compiles a Windows `.exe` on macOS using `cargo-xwin` + LLVM |
 
 ## Backend commands (src-tauri/src/main.rs)
 
 ```
-check_kei()                -> String (resolved binary path)
-get_config()               -> KeiConfig
-save_config(config)        -> ()
-get_status()               -> SyncStatus    // reads SQLite
-get_history()              -> Vec<SyncRun>  // reads SQLite
-start_sync(app)            -> ()            // spawns kei sync
-stop_sync()                -> ()            // kills child process
-submit_2fa(code)           -> ()            // runs kei login submit-code <CODE>
+check_kei()                    -> String           // resolved binary path
+get_config()                   -> KeiConfig
+save_config(config)            -> ()
+get_app_settings()             -> AppSettings      // UI-only settings (folder structure, etc.)
+save_app_settings(settings)    -> ()
+get_kei_versions()             -> KeiVersions      // bundled + system kei paths and versions
+get_status()                   -> SyncStatus       // reads SQLite
+get_history()                  -> Vec<SyncRun>     // reads SQLite
+start_sync(app)                -> ()               // spawns kei sync
+stop_sync()                    -> ()               // kills child process
+submit_password(password)      -> ()               // writes password to kei's stdin
+request_2fa_code(app)          -> ()               // runs kei login get-code
+submit_2fa(app, code)          -> ()               // runs kei login submit-code <CODE>
+clear_kei_session()            -> ()               // deletes session/cookie files
+list_kei_albums()              -> Vec<String>      // runs kei list albums
+open_url(url)                  -> ()               // opens URL in system browser
 ```
 
 ### App state
@@ -54,17 +64,26 @@ submit_2fa(code)           -> ()            // runs kei login submit-code <CODE>
 ```rust
 struct AppState {
     sync_child: Arc<Mutex<Option<tokio::process::Child>>>,
+    sync_stdin: Arc<Mutex<Option<tokio::process::ChildStdin>>>,
 }
 ```
 
-There is exactly one `AppState` instance, registered with `.manage()` at startup. Commands that need it take `state: State<'_, AppState>`.
+There is exactly one `AppState` instance, registered with `.manage()` at startup. Commands that need it take `state: State<'_, AppState>`. `sync_stdin` is kept open so password responses can be written without re-spawning the process.
+
+### AppSettings vs KeiConfig
+
+`KeiConfig` maps directly to kei's `config.toml` and is read/written by the kei binary itself. `AppSettings` is a separate file (`~/.config/kei-photosync/settings.toml`) that holds UI-only preferences kei doesn't know about: `use_system_kei`, `all_albums`, `folder_structure`, `album_folder_structure`. The `folder_structure` computed from `AppSettings` is passed to kei as `--folder-structure` at sync time — it is **not** written to kei's `config.toml` (doing so causes kei to report "Config changed — verifying all files" on every sync due to TOML serialisation differences).
 
 ### Tauri events emitted from Rust → JS
 
 | Event | Payload | Meaning |
 |---|---|---|
-| `sync-output` | `String` | One line of stdout or stderr from kei |
+| `sync-output-batch` | `Vec<String>` | Batch of stdout/stderr lines (flushed every 50 ms or when 200 lines accumulate) |
 | `sync-2fa-required` | `String` | kei printed a 2FA prompt; show the input dialog |
+| `sync-password-required` | `String` | kei printed an interactive password prompt |
+| `sync-adp-detected` | `String` | Advanced Data Protection error detected in output |
+| `sync-session-reset` | `()` | HTTP 421 detected; session files cleared automatically |
+| `sync-lock-cleared` | `()` | Stale `.lock` file detected and removed |
 | `sync-completed` | `()` | kei exited 0 |
 | `sync-failed` | `String` | kei exited non-zero; payload is the error message |
 
@@ -87,22 +106,23 @@ The kei binary is bundled using Tauri's `externalBin` mechanism. Before building
 npm run prepare-sidecar
 ```
 
-This copies the locally-installed kei binary to `src-tauri/binaries/kei-<target-triple>[.exe]`. The binaries directory is gitignored.
+This downloads the pinned kei release (from `src-tauri/binaries/.kei-version`) to `src-tauri/binaries/kei-<target-triple>[.exe]`. The binaries themselves are gitignored; the version file is committed. Pass `--force` to fetch latest and update the pin.
 
-`which_kei()` in `main.rs` resolves the binary in this order:
+To update kei: `node scripts/prepare-sidecar.js --force`, then commit `.kei-version`.
+
+`resolve_kei_bin()` in `main.rs` resolves the binary in this order:
 1. Sidecar alongside the current executable (`current_exe().parent()/kei[.exe]`)
 2. `$KEI_BIN` env override
-3. Common install locations (`~/.cargo/bin`, Homebrew, `/usr/local/bin`, etc.)
-4. `which`/`where` PATH lookup
+3. `which`/`where` PATH lookup (via login shell on macOS/Linux)
 
 ## kei data locations
 
 | Platform | Config dir | Database |
 |---|---|---|
 | macOS / Linux | `~/.config/kei/` | `~/.config/kei/cookies/<sanitised_username>.db` |
-| Windows | `%APPDATA%\kei\` | `%APPDATA%\kei\cookies\<sanitised_username>.db` |
+| Windows | `%USERPROFILE%\.config\kei\` | `%USERPROFILE%\.config\kei\cookies\<sanitised_username>.db` |
 
-`kei_config_dir()` in `main.rs` returns the correct platform path. The username is sanitised by keeping only alphanumeric chars and `-` (stripping `@`, `.`, etc.).
+`kei_config_dir()` in `main.rs` returns the correct platform path. On Windows it uses `USERPROFILE` (not `APPDATA`) because kei uses the same `~/.config/kei` path on all platforms. The username is sanitised by keeping only alphanumeric chars and `-` (stripping `@`, `.`, etc.).
 
 ## SQLite schema (read-only)
 
@@ -172,8 +192,9 @@ Message labels live in `MESSAGE_LABELS` (exact match) and `MESSAGE_PREFIX_LABELS
 
 - `titleBarStyle: "Overlay"` and `hiddenTitle: true` in `tauri.conf.json` are macOS-only; Tauri ignores them on Windows/Linux (native window decorations are used instead).
 - `-webkit-app-region: drag` in CSS works in WKWebView (macOS), WebView2 (Windows), and WebKitGTK (Linux) within Tauri.
-- `kei_config_dir()` uses `%APPDATA%` on Windows, `~/.config/kei` elsewhere.
-- The binary name is `kei` on Unix and `kei.exe` on Windows; `which_kei()` handles this with `#[cfg(target_os = "windows")]`.
+- `kei_config_dir()` uses `%USERPROFILE%\.config\kei` on Windows (matching kei's own path), `~/.config/kei` elsewhere.
+- The binary name is `kei` on Unix and `kei.exe` on Windows; `resolve_kei_bin()` handles this with `#[cfg(target_os = "windows")]`.
+- All child process spawns on Windows use `creation_flags(0x08000000)` (`CREATE_NO_WINDOW`) to suppress the console flash that would otherwise appear briefly when kei or helper commands are launched.
 
 ## Adding a new backend command
 

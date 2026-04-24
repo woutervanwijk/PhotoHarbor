@@ -1,1 +1,1 @@
-see @agents.md
+see @AGENTS.md
