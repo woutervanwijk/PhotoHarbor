@@ -36,19 +36,19 @@ xattr -cr "/Applications/Kei PhotoSync.app"
 - On macOS: Xcode Command Line Tools (`xcode-select --install`)
 - On Linux: `libwebkit2gtk`, `libgtk-3`, `libayatana-appindicator3` (see [Tauri Linux dependencies](https://tauri.app/start/prerequisites/#linux))
 
-kei itself is downloaded automatically by `npm run prepare-sidecar` — no separate installation needed.
+kei itself is downloaded automatically by `pnpm run prepare-sidecar` — no separate installation needed.
 
 ## Quick start
 
 ```bash
 # Install JS dependencies
-npm install
+pnpm install
 
 # Download the latest kei release from GitHub into src-tauri/binaries/
-npm run prepare-sidecar
+pnpm run prepare-sidecar
 
 # Launch in development mode
-npm run dev
+pnpm run dev
 ```
 
 The first build takes a few minutes (Tauri compiles the WebView bindings). Subsequent runs are fast.
@@ -66,8 +66,8 @@ git commit -m "update kei sidecar to vX.Y.Z"
 ## Building for distribution
 
 ```bash
-npm run prepare-sidecar   # ensure sidecar is up to date
-npm run build
+pnpm run prepare-sidecar   # ensure sidecar is up to date
+pnpm run build
 ```
 
 Output locations:
@@ -174,7 +174,7 @@ npx tauri icon path/to/your-icon.png
 
 ## Troubleshooting
 
-**kei not found** — Run `npm run prepare-sidecar`. If kei itself is missing, install it with `cargo install kei` first.
+**kei not found** — Run `pnpm run prepare-sidecar`. If kei itself is missing, install it with `cargo install kei` first.
 
 **No data in Dashboard** — kei creates its SQLite database only after the first successful sync. Run `kei sync` once from the terminal to initialise it, or use the Sync view.
 
