@@ -845,6 +845,95 @@ async fn clear_kei_session() -> Result<(), String> {
 }
 
 // ---------------------------------------------------------------------------
+// Recent downloads — walks the download dir and returns the 5 newest media files
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+pub struct RecentAsset {
+    pub path: String,
+    pub is_video: bool,
+}
+
+fn expand_tilde(path: &str) -> String {
+    if path == "~" || path.starts_with("~/") {
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .unwrap_or_default();
+        format!("{}{}", home, &path[1..])
+    } else {
+        path.to_string()
+    }
+}
+
+fn collect_media_files(root: &std::path::Path) -> Vec<(std::time::SystemTime, std::path::PathBuf, bool)> {
+    let mut files = Vec::new();
+    let mut dirs = vec![root.to_path_buf()];
+    while let Some(dir) = dirs.pop() {
+        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        for entry in rd.flatten() {
+            let path = entry.path();
+            let Ok(meta) = entry.metadata() else { continue };
+            if meta.is_dir() {
+                dirs.push(path);
+            } else {
+                // ctime (inode-change time) is the right key: the OS refreshes it
+                // whenever utimes() is called, so it reflects the actual download
+                // time even when kei backdates mtime/birthtime to the EXIF date.
+                // Windows has no meaningful ctime, so fall back to created()/modified().
+                #[cfg(unix)]
+                let ts_opt: Option<std::time::SystemTime> = {
+                    use std::os::unix::fs::MetadataExt;
+                    let secs = meta.ctime();
+                    if secs >= 0 {
+                        Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs as u64))
+                    } else { None }
+                };
+                #[cfg(not(unix))]
+                let ts_opt: Option<std::time::SystemTime> =
+                    meta.created().or_else(|_| meta.modified()).ok();
+
+                if let Some(ts) = ts_opt {
+                    let ext = path.extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("")
+                        .to_lowercase();
+                    let is_video = matches!(ext.as_str(), "mp4" | "mov" | "m4v" | "avi" | "mkv" | "wmv");
+                    let is_image = matches!(ext.as_str(),
+                        "jpg" | "jpeg" | "png" | "heic" | "heif" | "gif" | "webp" | "tiff" | "tif" | "bmp");
+                    if is_video || is_image {
+                        files.push((ts, path, is_video));
+                    }
+                }
+            }
+        }
+    }
+    files
+}
+
+#[tauri::command]
+async fn get_recent_downloads(directory: String) -> Vec<RecentAsset> {
+    let dir = std::path::PathBuf::from(expand_tilde(&directory));
+
+    tokio::task::spawn_blocking(move || {
+        if !dir.exists() {
+            return vec![];
+        }
+        let mut files = collect_media_files(&dir);
+        files.sort_by(|a, b| b.0.cmp(&a.0));
+        files.truncate(12);
+        files
+            .into_iter()
+            .map(|(_, path, is_video)| RecentAsset {
+                path: path.to_string_lossy().to_string(),
+                is_video,
+            })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
+}
+
+// ---------------------------------------------------------------------------
 // App settings (UI-only, separate from kei's config.toml)
 // ---------------------------------------------------------------------------
 
@@ -1015,6 +1104,31 @@ async fn check_kei() -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn open_folder(path: String) -> Result<(), String> {
+    let expanded = expand_tilde(&path);
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open")
+        .arg(&expanded)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "linux")]
+    std::process::Command::new("xdg-open")
+        .arg(&expanded)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("explorer")
+            .arg(&expanded)
+            .creation_flags(0x08000000)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn open_url(url: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     std::process::Command::new("open")
@@ -1066,6 +1180,8 @@ fn main() {
             submit_2fa,
             clear_kei_session,
             list_kei_albums,
+            get_recent_downloads,
+            open_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Kei PhotoSync");

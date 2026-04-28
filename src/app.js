@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getVersion } from "@tauri-apps/api/app";
@@ -34,7 +34,7 @@ function showView(name) {
   if (navItem) navItem.classList.add("active");
   toolbarTitle.textContent = VIEW_TITLES[name] ?? "";
 
-  if (name === "sync") loadDashboard();
+  if (name === "sync") { loadDashboard(); loadRecentThumbnails(); }
   if (name === "history") loadHistory();
   if (name === "settings") loadSettings();
 }
@@ -94,6 +94,119 @@ async function loadDashboard() {
   } catch (err) {
     console.error("get_status error:", err);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Recent thumbnails + lightbox
+// ---------------------------------------------------------------------------
+
+const _thumbsEl = document.getElementById("recent-thumbnails");
+const _thumbsListEl = document.getElementById("thumbnails-list");
+let _thumbPollInterval = null;
+let _shownThumbPaths = new Set();
+let _thumbDirectory = null;
+
+document.getElementById("open-folder-btn").addEventListener("click", () => {
+  if (_thumbDirectory) invoke("open_folder", { path: _thumbDirectory }).catch(() => {});
+});
+
+// Lightbox
+const _lightboxOverlay = document.getElementById("lightbox-overlay");
+const _lightboxImg = document.getElementById("lightbox-img");
+const _lightboxVideo = document.getElementById("lightbox-video");
+
+function openLightbox(src, isVideo) {
+  if (isVideo) {
+    _lightboxImg.classList.add("hidden");
+    _lightboxVideo.src = src;
+    _lightboxVideo.classList.remove("hidden");
+  } else {
+    _lightboxVideo.pause();
+    _lightboxVideo.removeAttribute("src");
+    _lightboxVideo.classList.add("hidden");
+    _lightboxImg.src = src;
+    _lightboxImg.classList.remove("hidden");
+  }
+  _lightboxOverlay.classList.remove("hidden");
+}
+
+function closeLightbox() {
+  _lightboxOverlay.classList.add("hidden");
+  _lightboxVideo.pause();
+  _lightboxVideo.removeAttribute("src");
+  _lightboxImg.removeAttribute("src");
+}
+
+document.getElementById("lightbox-close").addEventListener("click", closeLightbox);
+_lightboxOverlay.addEventListener("click", (e) => { if (e.target === _lightboxOverlay) closeLightbox(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !_lightboxOverlay.classList.contains("hidden")) closeLightbox();
+});
+
+
+async function loadRecentThumbnails() {
+  try {
+    const cfg = await invoke("get_config");
+    const directory = cfg.download?.directory;
+    if (!directory) { _thumbsEl.classList.add("hidden"); return; }
+
+    _thumbDirectory = directory;
+    const assets = await invoke("get_recent_downloads", { directory });
+    if (!assets || assets.length === 0) { _thumbsEl.classList.add("hidden"); return; }
+
+    _thumbsListEl.innerHTML = "";
+    const newPaths = new Set(assets.map((a) => a.path));
+
+    for (const asset of assets) {
+      const isNew = !_shownThumbPaths.has(asset.path);
+      const item = document.createElement("div");
+      item.className = "thumb-item" + (isNew ? " thumb-item--new" : "");
+      const src = convertFileSrc(asset.path);
+
+      if (asset.is_video) {
+        const video = document.createElement("video");
+        video.muted = true;
+        video.playsInline = true;
+        video.preload = "auto";
+        video.src = src;
+        video.onerror = () => item.remove();
+        video.addEventListener("loadedmetadata", () => {
+          video.currentTime = Math.min(1, (video.duration || 10) * 0.1);
+        }, { once: true });
+        video.addEventListener("seeked", () => {
+          video.play().then(() => video.pause()).catch(() => {});
+        }, { once: true });
+        item.appendChild(video);
+        const badge = document.createElement("div");
+        badge.className = "thumb-video-badge";
+        item.appendChild(badge);
+      } else {
+        const img = document.createElement("img");
+        img.src = src;
+        img.alt = "";
+        img.loading = "lazy";
+        img.onerror = () => item.remove();
+        item.appendChild(img);
+      }
+
+      item.addEventListener("click", () => openLightbox(src, asset.is_video));
+      _thumbsListEl.appendChild(item);
+    }
+
+    _shownThumbPaths = newPaths;
+    _thumbsEl.classList.remove("hidden");
+  } catch {
+    _thumbsEl.classList.add("hidden");
+  }
+}
+
+function _startThumbPolling() {
+  if (_thumbPollInterval) return;
+  _thumbPollInterval = setInterval(loadRecentThumbnails, 5000);
+}
+
+function _stopThumbPolling() {
+  if (_thumbPollInterval) { clearInterval(_thumbPollInterval); _thumbPollInterval = null; }
 }
 
 // ---------------------------------------------------------------------------
@@ -282,6 +395,8 @@ function setSyncRunning(running) {
   badge.textContent = running ? "Running" : "Idle";
   badge.className = `badge ${running ? "running" : ""}`;
   progressWrap.classList.toggle("hidden", !running);
+  if (running) _startThumbPolling();
+  else { _stopThumbPolling(); loadRecentThumbnails(); }
 }
 
 // Register Tauri event listeners once.
@@ -866,3 +981,4 @@ document.getElementById("copy-install-cmd").addEventListener("click", () => {
 
 toolbarTitle.textContent = VIEW_TITLES["sync"];
 loadDashboard();
+loadRecentThumbnails();
