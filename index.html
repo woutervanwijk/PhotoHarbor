@@ -244,6 +244,21 @@
               <input type="text" id="cfg-album-folder-structure" placeholder="{album}/%Y/%m/%d" />
               <span class="form-hint">Use <code>{album}</code> for the album name. Photos not in any album land at the path without the <code>{album}</code> segment.</span>
             </div>
+            <div class="form-row">
+              <label for="cfg-smart-folder-structure-select">Smart Folder Structure</label>
+              <select id="cfg-smart-folder-structure-select">
+                <option value="{smart-folder}" selected>Smart Folder (flat)</option>
+                <option value="{smart-folder}/%Y/%m">Smart Folder / Year / Month</option>
+                <option value="{smart-folder}/%Y/%m/%d">Smart Folder / Year / Month / Day</option>
+                <option value="{smart-folder}/%Y">Smart Folder / Year</option>
+                <option value="__custom__">Custom…</option>
+              </select>
+            </div>
+            <div class="form-row hidden" id="cfg-smart-folder-structure-custom-row">
+              <label for="cfg-smart-folder-structure">Custom Smart Folder Pattern</label>
+              <input type="text" id="cfg-smart-folder-structure" placeholder="{smart-folder}/%Y/%m/%d" />
+              <span class="form-hint">Use <code>{smart-folder}</code> for Favorites, Hidden, Screenshots, and other Apple smart folders.</span>
+            </div>
           </div>
 
           <div class="settings-group">
@@ -262,6 +277,14 @@
               <label>Exclude Albums <button type="button" class="btn-ghost btn-inline" id="cfg-exclude-albums-refresh" title="Refresh album list">↻</button></label>
               <div id="cfg-exclude-albums-list" class="albums-checklist hidden"></div>
               <input type="text" id="cfg-exclude-albums" placeholder="Screenshots, Hidden (comma-separated)" />
+            </div>
+            <div class="form-row">
+              <label for="cfg-unfiled">Include Unfiled Photos</label>
+              <input type="checkbox" id="cfg-unfiled" checked />
+            </div>
+            <div class="form-row">
+              <label for="cfg-smart-folders">Smart Folders</label>
+              <input type="text" id="cfg-smart-folders" placeholder="Favorites, Screenshots (comma-separated)" />
             </div>
           </div>
 
@@ -293,6 +316,10 @@
                   <option value="cn">China</option>
                 </select>
               </div>
+              <div class="form-row">
+                <label for="cfg-libraries">Libraries</label>
+                <input type="text" id="cfg-libraries" placeholder="primary, shared, SharedSync-AB12CD34" />
+              </div>
             </div>
 
             <div class="settings-group">
@@ -304,6 +331,10 @@
               <div class="form-row">
                 <label for="cfg-exif">Set EXIF datetime</label>
                 <input type="checkbox" id="cfg-exif" />
+              </div>
+              <div class="form-row">
+                <label for="cfg-max-download-attempts">Max Download Attempts</label>
+                <input type="number" id="cfg-max-download-attempts" min="0" placeholder="10" style="width:80px" />
               </div>
             </div>
 

@@ -1,13 +1,13 @@
 // Prevents a console window from appearing on Windows in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use serde::{Deserialize, Serialize};
 use std::process::Stdio;
 use std::sync::Arc;
+use tauri::{AppHandle, Emitter, State};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
-use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
 
 // ---------------------------------------------------------------------------
 // Config structs — mirrors ~/.config/kei/config.toml
@@ -33,15 +33,26 @@ pub struct DownloadConfig {
     pub directory: Option<String>,
     pub threads_num: Option<u32>,
     pub folder_structure: Option<String>,
+    pub folder_structure_albums: Option<String>,
+    pub folder_structure_smart_folders: Option<String>,
     pub set_exif_datetime: Option<bool>,
+    pub retry: Option<DownloadRetryConfig>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+pub struct DownloadRetryConfig {
+    pub max_download_attempts: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct FiltersConfig {
     pub skip_videos: Option<bool>,
     pub skip_photos: Option<bool>,
+    pub libraries: Option<Vec<String>>,
     pub albums: Option<Vec<String>>,
     pub exclude_albums: Option<Vec<String>>,
+    pub smart_folders: Option<Vec<String>>,
+    pub unfiled: Option<bool>,
     pub recent: Option<u32>,
 }
 
@@ -160,12 +171,43 @@ async fn get_config() -> Result<KeiConfig, String> {
 
 #[tauri::command]
 async fn save_config(mut config: KeiConfig) -> Result<(), String> {
+    normalize_v013_filters(&mut config);
     let path = config_path()?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let content = toml::to_string_pretty(&config).map_err(|e| e.to_string())?;
     std::fs::write(&path, content).map_err(|e| e.to_string())
+}
+
+fn normalize_v013_filters(config: &mut KeiConfig) {
+    let Some(filters) = config.filters.as_mut() else {
+        return;
+    };
+
+    let mut albums = filters.albums.take().unwrap_or_default();
+    albums.retain(|album| !album.eq_ignore_ascii_case("all"));
+
+    if let Some(exclude_albums) = filters.exclude_albums.take() {
+        albums.extend(
+            exclude_albums
+                .into_iter()
+                .filter(|album| !album.is_empty())
+                .map(|album| {
+                    if album.starts_with('!') {
+                        album
+                    } else {
+                        format!("!{album}")
+                    }
+                }),
+        );
+    }
+
+    filters.albums = if albums.is_empty() {
+        None
+    } else {
+        Some(albums)
+    };
 }
 
 #[tauri::command]
@@ -296,7 +338,8 @@ async fn get_history() -> Result<Vec<SyncRun>, String> {
             })
             .map_err(|e| e.to_string())?;
 
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -360,7 +403,9 @@ async fn list_kei_albums() -> Result<Vec<String>, String> {
 /// Delete any .lock files in the kei cookies directory.
 /// Returns true if at least one lock file was removed.
 async fn delete_kei_lock() -> bool {
-    let Ok(base) = kei_config_dir() else { return false };
+    let Ok(base) = kei_config_dir() else {
+        return false;
+    };
     let cookies_dir = base.join("cookies");
     let mut deleted = false;
     if let Ok(rd) = std::fs::read_dir(&cookies_dir) {
@@ -382,7 +427,9 @@ async fn delete_kei_lock() -> bool {
 fn is_session_error(line: &str) -> bool {
     let lower = line.to_lowercase();
     lower.contains("http_421")
-        || (lower.contains("421") && lower.contains("misdirected") && lower.contains("service error"))
+        || (lower.contains("421")
+            && lower.contains("misdirected")
+            && lower.contains("service error"))
 }
 
 /// Emit a batch of log lines to the frontend via the shared `sync-output-batch` event.
@@ -406,7 +453,9 @@ fn is_password_prompt(line: &str) -> bool {
             if c == '\x1b' {
                 // Skip until the final byte of the escape sequence (a letter).
                 for ch in chars.by_ref() {
-                    if ch.is_ascii_alphabetic() { break; }
+                    if ch.is_ascii_alphabetic() {
+                        break;
+                    }
                 }
             } else {
                 s.push(c);
@@ -452,27 +501,43 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
     if toml_had_all {
         let mut clean = kei_cfg.clone();
         if let Some(ref mut f) = clean.filters {
-            f.albums = None;
+            let retained = f
+                .albums
+                .take()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|a| !a.eq_ignore_ascii_case("all"))
+                .collect::<Vec<_>>();
+            f.albums = if retained.is_empty() {
+                None
+            } else {
+                Some(retained)
+            };
         }
         if let (Ok(path), Ok(content)) = (config_path(), toml::to_string_pretty(&clean)) {
             let _ = std::fs::write(path, content);
         }
     }
 
-    // Compute folder_structure from AppSettings; passed as --folder-structure CLI
+    // Compute folder templates from AppSettings / config; passed as CLI
     // arg so we never touch kei's config.toml (which would trigger "Config changed
     // — verifying all files" on every sync due to TOML serialization differences).
-    let base = app_settings.folder_structure.as_deref().unwrap_or("%Y/%m");
-    let kei_folder_structure = match app_settings.album_folder_structure.as_deref() {
-        None | Some("") => {
-            if base.is_empty() {
-                "{album}".to_string()
-            } else {
-                format!("{{album}}/{}", base)
-            }
-        }
-        Some(album_pattern) => album_pattern.to_string(),
-    };
+    let config_download = kei_cfg.download.as_ref();
+    let kei_folder_structure = app_settings.folder_structure.as_deref();
+    let kei_folder_structure = config_download
+        .and_then(|d| d.folder_structure.as_deref())
+        .or(kei_folder_structure)
+        .unwrap_or("%Y/%m");
+    let kei_album_folder_structure_fallback = app_settings.album_folder_structure.as_deref();
+    let kei_album_folder_structure = config_download
+        .and_then(|d| d.folder_structure_albums.as_deref())
+        .or(kei_album_folder_structure_fallback)
+        .unwrap_or("{album}");
+    let kei_smart_folder_structure_fallback = app_settings.smart_folder_structure.as_deref();
+    let kei_smart_folder_structure = config_download
+        .and_then(|d| d.folder_structure_smart_folders.as_deref())
+        .or(kei_smart_folder_structure_fallback)
+        .unwrap_or("{smart-folder}");
 
     // Clear any stale lock file left by a previous hard-quit before launching kei.
     // This avoids the "Session lock held by another instance" error on restart.
@@ -480,22 +545,21 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
         emit_log(&app, vec!["── Cleared stale kei lock file ──".to_string()]);
     }
 
-    let all_albums = app_settings.all_albums.unwrap_or(false);
-
-    let cmdline = if all_albums {
-        format!("$ {} sync -a all", kei_bin)
-    } else {
-        format!("$ {} sync", kei_bin)
-    };
-    emit_log(&app, vec![cmdline]);
+    emit_log(&app, vec![format!("$ {} sync", kei_bin)]);
 
     let mut cmd = Command::new(&kei_bin);
     cmd.arg("sync");
     if !kei_folder_structure.is_empty() {
         cmd.args(["--folder-structure", &kei_folder_structure]);
     }
-    if all_albums {
-        cmd.args(["-a", "all"]);
+    if !kei_album_folder_structure.is_empty() {
+        cmd.args(["--folder-structure-albums", &kei_album_folder_structure]);
+    }
+    if !kei_smart_folder_structure.is_empty() {
+        cmd.args([
+            "--folder-structure-smart-folders",
+            &kei_smart_folder_structure,
+        ]);
     }
     if let Some(extra) = &app_settings.extra_args {
         cmd.args(extra.split_whitespace());
@@ -503,13 +567,13 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000);
     let mut child = cmd
-        .stdin(Stdio::piped())   // kept open so we can write password/2FA responses
+        .stdin(Stdio::piped()) // kept open so we can write password/2FA responses
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("Failed to launch kei: {e}"))?;
 
-    let stdin  = child.stdin.take().expect("stdin piped");
+    let stdin = child.stdin.take().expect("stdin piped");
     let stdout = child.stdout.take().expect("stdout piped");
     let stderr = child.stderr.take().expect("stderr piped");
 
@@ -532,9 +596,7 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
         // Batch log lines and flush at most every 50 ms to avoid flooding the
         // WebView IPC channel with hundreds of individual events per second.
         let mut log_batch: Vec<String> = Vec::new();
-        let mut flush_ticker = tokio::time::interval(
-            tokio::time::Duration::from_millis(50)
-        );
+        let mut flush_ticker = tokio::time::interval(tokio::time::Duration::from_millis(50));
         flush_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         // Helper: run per-line side-effect checks and buffer the display string.
@@ -698,7 +760,10 @@ async fn submit_password(password: String, state: State<'_, AppState>) -> Result
     let mut guard = state.sync_stdin.lock().await;
     if let Some(stdin) = guard.as_mut() {
         let line = format!("{}\n", password);
-        stdin.write_all(line.as_bytes()).await.map_err(|e| e.to_string())?;
+        stdin
+            .write_all(line.as_bytes())
+            .await
+            .map_err(|e| e.to_string())?;
         stdin.flush().await.map_err(|e| e.to_string())?;
         Ok(())
     } else {
@@ -763,7 +828,10 @@ async fn submit_2fa(app: AppHandle, code: String) -> Result<(), String> {
     }
 
     // Log with masked code so credentials don't appear in the output panel.
-    emit_log(&app, vec![format!("$ {} login submit-code ******", kei_bin)]);
+    emit_log(
+        &app,
+        vec![format!("$ {} login submit-code ******", kei_bin)],
+    );
 
     let mut cmd = Command::new(&kei_bin);
     cmd.args(["login", "submit-code", &trimmed]);
@@ -822,7 +890,7 @@ async fn clear_kei_session() -> Result<(), String> {
     // Extensions (and no-extension base file) that hold auth state.
     // The .db file is intentionally excluded — it holds download history.
     let auth_extensions: &[Option<&str>] = &[
-        None,              // bare cookies file (no extension)
+        None, // bare cookies file (no extension)
         Some("session"),
     ];
 
@@ -865,11 +933,15 @@ fn expand_tilde(path: &str) -> String {
     }
 }
 
-fn collect_media_files(root: &std::path::Path) -> Vec<(std::time::SystemTime, std::path::PathBuf, bool)> {
+fn collect_media_files(
+    root: &std::path::Path,
+) -> Vec<(std::time::SystemTime, std::path::PathBuf, bool)> {
     let mut files = Vec::new();
     let mut dirs = vec![root.to_path_buf()];
     while let Some(dir) = dirs.pop() {
-        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         for entry in rd.flatten() {
             let path = entry.path();
             let Ok(meta) = entry.metadata() else { continue };
@@ -886,20 +958,35 @@ fn collect_media_files(root: &std::path::Path) -> Vec<(std::time::SystemTime, st
                     let secs = meta.ctime();
                     if secs >= 0 {
                         Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs as u64))
-                    } else { None }
+                    } else {
+                        None
+                    }
                 };
                 #[cfg(not(unix))]
                 let ts_opt: Option<std::time::SystemTime> =
                     meta.created().or_else(|_| meta.modified()).ok();
 
                 if let Some(ts) = ts_opt {
-                    let ext = path.extension()
+                    let ext = path
+                        .extension()
                         .and_then(|e| e.to_str())
                         .unwrap_or("")
                         .to_lowercase();
-                    let is_video = matches!(ext.as_str(), "mp4" | "mov" | "m4v" | "avi" | "mkv" | "wmv");
-                    let is_image = matches!(ext.as_str(),
-                        "jpg" | "jpeg" | "png" | "heic" | "heif" | "gif" | "webp" | "tiff" | "tif" | "bmp");
+                    let is_video =
+                        matches!(ext.as_str(), "mp4" | "mov" | "m4v" | "avi" | "mkv" | "wmv");
+                    let is_image = matches!(
+                        ext.as_str(),
+                        "jpg"
+                            | "jpeg"
+                            | "png"
+                            | "heic"
+                            | "heif"
+                            | "gif"
+                            | "webp"
+                            | "tiff"
+                            | "tif"
+                            | "bmp"
+                    );
                     if is_video || is_image {
                         files.push((ts, path, is_video));
                     }
@@ -948,6 +1035,9 @@ pub struct AppSettings {
     /// Folder structure pattern for album photos (e.g. "{album}/%Y/%m").
     /// When None, defaults to "{album}" (flat).
     pub album_folder_structure: Option<String>,
+    /// Folder structure pattern for smart-folder photos (e.g. "{smart-folder}/%Y/%m").
+    /// When None, defaults to "{smart-folder}" (flat).
+    pub smart_folder_structure: Option<String>,
     /// Extra flags appended verbatim to `kei sync` (space-separated).
     pub extra_args: Option<String>,
 }
@@ -1048,7 +1138,8 @@ fn find_system_kei() -> Option<String> {
 async fn resolve_kei_bin() -> Result<String, String> {
     let settings = get_app_settings().await.unwrap_or_default();
     if settings.use_system_kei.unwrap_or(false) {
-        find_system_kei().ok_or_else(|| "System kei not found in PATH or common locations".to_string())
+        find_system_kei()
+            .ok_or_else(|| "System kei not found in PATH or common locations".to_string())
     } else {
         find_bundled_kei()
             .or_else(find_system_kei)
@@ -1076,7 +1167,11 @@ async fn kei_version(path: &str) -> Option<String> {
     let out = cmd.output().await.ok()?;
     let s = String::from_utf8_lossy(&out.stdout);
     let v = s.trim().to_string();
-    if v.is_empty() { None } else { Some(v) }
+    if v.is_empty() {
+        None
+    } else {
+        Some(v)
+    }
 }
 
 #[tauri::command]
@@ -1095,7 +1190,12 @@ async fn get_kei_versions() -> KeiVersions {
         None
     };
 
-    KeiVersions { bundled_path, bundled_version, system_path, system_version }
+    KeiVersions {
+        bundled_path,
+        bundled_version,
+        system_path,
+        system_version,
+    }
 }
 
 #[tauri::command]

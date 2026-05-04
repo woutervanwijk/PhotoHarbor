@@ -649,10 +649,11 @@ async function loadSettings() {
 
     document.getElementById("cfg-username").value = cfg.auth?.username ?? "";
     document.getElementById("cfg-domain").value = cfg.auth?.domain ?? "com";
+    document.getElementById("cfg-libraries").value = (cfg.filters?.libraries ?? []).join(", ");
     document.getElementById("cfg-directory").value = cfg.download?.directory ?? "";
     document.getElementById("cfg-threads").value = cfg.download?.threads_num ?? "";
-    // Folder structure (non-album) — stored in AppSettings, not kei's TOML
-    const folderStructureVal = appSettings.folder_structure ?? "%Y/%m";
+    // Folder structure for the unfiled pass; AppSettings is a legacy fallback.
+    const folderStructureVal = cfg.download?.folder_structure ?? appSettings.folder_structure ?? "%Y/%m";
     const folderSelect = document.getElementById("cfg-folder-structure-select");
     const knownFolderOptions = Array.from(folderSelect.options).map((o) => o.value).filter((v) => v !== "__custom__");
     if (knownFolderOptions.includes(folderStructureVal)) {
@@ -664,8 +665,8 @@ async function loadSettings() {
       document.getElementById("cfg-folder-structure-custom-row").classList.remove("hidden");
     }
 
-    // Album folder structure (stored in AppSettings)
-    const albumFolderVal = appSettings.album_folder_structure ?? "{album}";
+    // Album folder structure; AppSettings is a legacy fallback.
+    const albumFolderVal = cfg.download?.folder_structure_albums ?? appSettings.album_folder_structure ?? "{album}";
     const albumFolderSelect = document.getElementById("cfg-album-folder-structure-select");
     const knownAlbumOptions = Array.from(albumFolderSelect.options).map((o) => o.value).filter((v) => v !== "__custom__");
     if (knownAlbumOptions.includes(albumFolderVal)) {
@@ -676,25 +677,46 @@ async function loadSettings() {
       document.getElementById("cfg-album-folder-structure").value = albumFolderVal;
       document.getElementById("cfg-album-folder-structure-custom-row").classList.remove("hidden");
     }
+
+    const smartFolderVal = cfg.download?.folder_structure_smart_folders ?? appSettings.smart_folder_structure ?? "{smart-folder}";
+    const smartFolderSelect = document.getElementById("cfg-smart-folder-structure-select");
+    const knownSmartOptions = Array.from(smartFolderSelect.options).map((o) => o.value).filter((v) => v !== "__custom__");
+    if (knownSmartOptions.includes(smartFolderVal)) {
+      smartFolderSelect.value = smartFolderVal;
+      document.getElementById("cfg-smart-folder-structure-custom-row").classList.add("hidden");
+    } else {
+      smartFolderSelect.value = "__custom__";
+      document.getElementById("cfg-smart-folder-structure").value = smartFolderVal;
+      document.getElementById("cfg-smart-folder-structure-custom-row").classList.remove("hidden");
+    }
     document.getElementById("cfg-exif").checked = cfg.download?.set_exif_datetime ?? false;
     document.getElementById("cfg-skip-videos").checked = cfg.filters?.skip_videos ?? false;
     document.getElementById("cfg-skip-photos").checked = cfg.filters?.skip_photos ?? false;
 
-    // "All Albums" is stored in AppSettings (not kei's TOML) because kei
-    // treats albums=["all"] as a literal album name instead of the -a all flag.
-    // Fall back to checking the TOML for legacy configs that still have ["all"].
-    const tomlHasAll = (cfg.filters?.albums ?? []).some((a) => a.toLowerCase() === "all");
-    const albumsAll = (appSettings.all_albums ?? false) || tomlHasAll;
-    const albums = albumsAll ? [] : (cfg.filters?.albums ?? []);
+    // v0.13 stores album exclusions inline as "!Name"; legacy configs may still
+    // carry exclude_albums or albums=["all"].
+    const albumFilters = cfg.filters?.albums ?? [];
+    const includedAlbums = albumFilters.filter((a) => !a.startsWith("!") && a.toLowerCase() !== "all");
+    const excludedAlbums = [
+      ...albumFilters.filter((a) => a.startsWith("!")).map((a) => a.slice(1)),
+      ...(cfg.filters?.exclude_albums ?? []),
+    ];
+    const tomlHasAll = albumFilters.some((a) => a.toLowerCase() === "all");
+    const tomlHasExclusionOnlySelection = includedAlbums.length === 0 && excludedAlbums.length > 0;
+    const albumsAll = (appSettings.all_albums ?? false) || tomlHasAll || tomlHasExclusionOnlySelection;
+    const albums = albumsAll ? [] : includedAlbums;
     document.getElementById("cfg-albums-all").checked = albumsAll;
     document.getElementById("cfg-albums-row").classList.toggle("hidden", albumsAll);
     document.getElementById("cfg-exclude-albums-row").classList.toggle("hidden", !albumsAll);
     if (!albumsAll) loadAlbumPicker(albums);
 
-    loadExcludeAlbumPicker(cfg.filters?.exclude_albums ?? []);
+    loadExcludeAlbumPicker(excludedAlbums);
+    document.getElementById("cfg-unfiled").checked = cfg.filters?.unfiled ?? true;
+    document.getElementById("cfg-smart-folders").value = (cfg.filters?.smart_folders ?? []).join(", ");
     document.getElementById("cfg-recent").value = cfg.filters?.recent ?? "";
     document.getElementById("cfg-watch-interval").value = cfg.watch?.interval ?? "";
     document.getElementById("cfg-log-level").value = cfg.log_level ?? "";
+    document.getElementById("cfg-max-download-attempts").value = cfg.download?.retry?.max_download_attempts ?? "";
 
     const useSystem = appSettings.use_system_kei ?? false;
     document.getElementById("cfg-use-system-kei").checked = useSystem;
@@ -742,6 +764,10 @@ document.getElementById("cfg-album-folder-structure-select").addEventListener("c
   document.getElementById("cfg-album-folder-structure-custom-row").classList.toggle("hidden", e.target.value !== "__custom__");
 });
 
+document.getElementById("cfg-smart-folder-structure-select").addEventListener("change", (e) => {
+  document.getElementById("cfg-smart-folder-structure-custom-row").classList.toggle("hidden", e.target.value !== "__custom__");
+});
+
 document.getElementById("cfg-use-system-kei").addEventListener("change", (e) => {
   document.getElementById("system-kei-warning").classList.toggle("hidden", !e.target.checked);
 });
@@ -785,6 +811,7 @@ document.querySelectorAll("#modal-about [data-url]").forEach((a) => {
 async function saveSettings() {
   const username = document.getElementById("cfg-username").value.trim();
   const domain = document.getElementById("cfg-domain").value;
+  const libraries = parseAlbums(document.getElementById("cfg-libraries").value) ?? null;
   const directory = document.getElementById("cfg-directory").value.trim();
   const threads = parseInt(document.getElementById("cfg-threads").value, 10);
   const folderSelectVal = document.getElementById("cfg-folder-structure-select").value;
@@ -796,14 +823,23 @@ async function saveSettings() {
   const albumFolderStructure = albumFolderSelectVal === "__custom__"
     ? document.getElementById("cfg-album-folder-structure").value.trim()
     : albumFolderSelectVal;
+  const smartFolderSelectVal = document.getElementById("cfg-smart-folder-structure-select").value;
+  const smartFolderStructure = smartFolderSelectVal === "__custom__"
+    ? document.getElementById("cfg-smart-folder-structure").value.trim()
+    : smartFolderSelectVal;
   const setExif = document.getElementById("cfg-exif").checked;
   const skipVideos = document.getElementById("cfg-skip-videos").checked;
   const skipPhotos = document.getElementById("cfg-skip-photos").checked;
   const albumsAll = document.getElementById("cfg-albums-all").checked;
-  // albumsAll is passed as a CLI flag (-a all) by the Rust side; don't write ["all"] to kei's TOML.
-  const albums = albumsAll ? null : (getSelectedAlbums().length > 0 ? getSelectedAlbums() : null);
+  // v0.13 stores exclusions inline: albums = ["!Screenshots"] means all albums except Screenshots.
   const excludeAlbums = getExcludeAlbums().length > 0 ? getExcludeAlbums() : null;
+  const albums = albumsAll
+    ? (excludeAlbums ? excludeAlbums.map((album) => `!${album}`) : null)
+    : (getSelectedAlbums().length > 0 ? getSelectedAlbums() : null);
+  const smartFolders = parseAlbums(document.getElementById("cfg-smart-folders").value) ?? null;
+  const unfiled = document.getElementById("cfg-unfiled").checked;
   const recent = parseInt(document.getElementById("cfg-recent").value, 10);
+  const maxDownloadAttempts = parseInt(document.getElementById("cfg-max-download-attempts").value, 10);
   const watchInterval = parseInt(document.getElementById("cfg-watch-interval").value, 10);
   const logLevel = document.getElementById("cfg-log-level").value || null;
   const useSystemKei = document.getElementById("cfg-use-system-kei").checked;
@@ -818,14 +854,22 @@ async function saveSettings() {
     download: {
       directory: directory || null,
       threads_num: isNaN(threads) ? null : threads,
-      folder_structure: null, // managed via AppSettings; written to TOML by start_sync
+      folder_structure: folderStructureBase || null,
+      folder_structure_albums: albumFolderStructure || null,
+      folder_structure_smart_folders: smartFolderStructure || null,
       set_exif_datetime: setExif || null,
+      retry: isNaN(maxDownloadAttempts) || maxDownloadAttempts < 0 ? null : {
+        max_download_attempts: maxDownloadAttempts,
+      },
     },
     filters: {
       skip_videos: skipVideos || null,
       skip_photos: skipPhotos || null,
+      libraries: libraries,
       albums: albums,
-      exclude_albums: excludeAlbums,
+      exclude_albums: null,
+      smart_folders: smartFolders,
+      unfiled: unfiled === true ? null : false,
       recent: isNaN(recent) || recent <= 0 ? null : recent,
     },
     watch: {
@@ -842,6 +886,7 @@ async function saveSettings() {
         all_albums: albumsAll,
         folder_structure: folderStructureBase || null,
         album_folder_structure: albumFolderStructure || null,
+        smart_folder_structure: smartFolderStructure || null,
       } }),
     ]);
     document.getElementById("settings-required-notice").classList.add("hidden");

@@ -146,15 +146,22 @@ username = "you@icloud.com"
 domain   = "com"          # or "cn" for China
 
 [download]
-directory        = "~/Photos/iCloud"
-threads_num      = 10
-folder_structure = "%Y/%m/%d"   # strftime; {album} token supported
+directory                      = "~/Photos/iCloud"
+threads_num                    = 10
+folder_structure               = "%Y/%m/%d"       # unfiled photos
+folder_structure_albums        = "{album}/%Y/%m"  # user albums
+folder_structure_smart_folders = "{smart-folder}" # Apple smart folders
 set_exif_datetime = false
+
+[download.retry]
+max_download_attempts = 10
 
 [filters]
 skip_videos    = false
-albums         = ["Vacation"]
-exclude_albums = ["Screenshots"]
+libraries      = ["primary"]
+albums         = ["Vacation", "!Screenshots"]
+smart_folders  = ["Favorites"]
+unfiled        = true
 recent         = 0              # 0 = all
 
 [watch]

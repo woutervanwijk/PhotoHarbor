@@ -72,7 +72,7 @@ There is exactly one `AppState` instance, registered with `.manage()` at startup
 
 ### AppSettings vs KeiConfig
 
-`KeiConfig` maps directly to kei's `config.toml` and is read/written by the kei binary itself. `AppSettings` is a separate file (`~/.config/kei-photosync/settings.toml`) that holds UI-only preferences kei doesn't know about: `use_system_kei`, `all_albums`, `folder_structure`, `album_folder_structure`. The `folder_structure` computed from `AppSettings` is passed to kei as `--folder-structure` at sync time — it is **not** written to kei's `config.toml` (doing so causes kei to report "Config changed — verifying all files" on every sync due to TOML serialisation differences).
+`KeiConfig` maps directly to kei's `config.toml` and is read/written by the kei binary itself. `AppSettings` is a separate file (`~/.config/kei-photosync/settings.toml`) that holds UI preferences such as `use_system_kei`, `all_albums`, and legacy folder-template fallbacks. Kei v0.13 stores unfiled, album, and smart-folder templates as `[download].folder_structure`, `[download].folder_structure_albums`, and `[download].folder_structure_smart_folders`; sync launch also passes those values with the matching v0.13 CLI flags.
 
 ### Tauri events emitted from Rust → JS
 
@@ -154,8 +154,8 @@ The GUI never writes to the database.
 KeiConfig {
     log_level: Option<String>,
     auth:     Option<AuthConfig>,      // username, domain
-    download: Option<DownloadConfig>,  // directory, threads_num, folder_structure, set_exif_datetime
-    filters:  Option<FiltersConfig>,   // skip_videos, skip_photos, albums, exclude_albums, recent
+    download: Option<DownloadConfig>,  // directory, threads_num, folder structures, retry, set_exif_datetime
+    filters:  Option<FiltersConfig>,   // skip_videos, skip_photos, libraries, albums, smart_folders, unfiled, recent
     watch:    Option<WatchConfig>,     // interval
 }
 ```
