@@ -282,8 +282,9 @@
               <label for="cfg-unfiled">Include Unfiled Photos</label>
               <input type="checkbox" id="cfg-unfiled" checked />
             </div>
-            <div class="form-row">
-              <label for="cfg-smart-folders">Smart Folders</label>
+            <div class="form-row form-row--top">
+              <label>Smart Folders <button type="button" class="btn-ghost btn-inline" id="cfg-smart-folders-refresh" title="Refresh smart folder list">↻</button></label>
+              <div id="cfg-smart-folders-list" class="albums-checklist hidden"></div>
               <input type="text" id="cfg-smart-folders" placeholder="Favorites, Screenshots (comma-separated)" />
             </div>
           </div>

@@ -588,6 +588,8 @@ const albumsList = document.getElementById("cfg-albums-list");
 const albumsTextInput = document.getElementById("cfg-albums");
 const excludeAlbumsList = document.getElementById("cfg-exclude-albums-list");
 const excludeAlbumsTextInput = document.getElementById("cfg-exclude-albums");
+const smartFoldersList = document.getElementById("cfg-smart-folders-list");
+const smartFoldersTextInput = document.getElementById("cfg-smart-folders");
 
 function _readChecklist(listEl, textEl) {
   if (!listEl.classList.contains("hidden")) {
@@ -603,6 +605,10 @@ function getSelectedAlbums() {
 
 function getExcludeAlbums() {
   return _readChecklist(excludeAlbumsList, excludeAlbumsTextInput);
+}
+
+function getSelectedSmartFolders() {
+  return _readChecklist(smartFoldersList, smartFoldersTextInput);
 }
 
 function _renderChecklist(listEl, textEl, albums, selected) {
@@ -626,6 +632,8 @@ function _renderChecklist(listEl, textEl, albums, selected) {
 // Cache: null = not yet fetched, [] = fetch failed, [...] = album names.
 let _albumCache = null;
 let _albumCachePromise = null;
+let _smartFolderCache = null;
+let _smartFolderCachePromise = null;
 
 async function _fetchAlbums(bust) {
   if (bust) { _albumCache = null; _albumCachePromise = null; }
@@ -638,10 +646,21 @@ async function _fetchAlbums(bust) {
   return _albumCachePromise;
 }
 
-async function _loadPicker(listEl, textEl, selected, bust) {
-  const albums = await _fetchAlbums(bust);
-  if (albums && albums.length > 0) {
-    _renderChecklist(listEl, textEl, albums, selected);
+async function _fetchSmartFolders(bust) {
+  if (bust) { _smartFolderCache = null; _smartFolderCachePromise = null; }
+  if (_smartFolderCache !== null) return _smartFolderCache;
+  if (!_smartFolderCachePromise) {
+    _smartFolderCachePromise = invoke("list_kei_smart_folders")
+      .then((list) => { _smartFolderCache = list; return list; })
+      .catch(() => { _smartFolderCache = []; _smartFolderCachePromise = null; return null; });
+  }
+  return _smartFolderCachePromise;
+}
+
+async function _loadPicker(listEl, textEl, selected, bust, fetchItems) {
+  const items = await fetchItems(bust);
+  if (items && items.length > 0) {
+    _renderChecklist(listEl, textEl, items, selected);
   } else {
     // Not authenticated or kei unavailable — use text input.
     listEl.classList.add("hidden");
@@ -651,11 +670,15 @@ async function _loadPicker(listEl, textEl, selected, bust) {
 }
 
 function loadAlbumPicker(selected, bust) {
-  return _loadPicker(albumsList, albumsTextInput, selected, bust);
+  return _loadPicker(albumsList, albumsTextInput, selected, bust, _fetchAlbums);
 }
 
 function loadExcludeAlbumPicker(selected, bust) {
-  return _loadPicker(excludeAlbumsList, excludeAlbumsTextInput, selected, bust);
+  return _loadPicker(excludeAlbumsList, excludeAlbumsTextInput, selected, bust, _fetchAlbums);
+}
+
+function loadSmartFolderPicker(selected, bust) {
+  return _loadPicker(smartFoldersList, smartFoldersTextInput, selected, bust, _fetchSmartFolders);
 }
 
 document.getElementById("cfg-albums-refresh").addEventListener("click", () => {
@@ -666,6 +689,10 @@ document.getElementById("cfg-albums-refresh").addEventListener("click", () => {
 document.getElementById("cfg-exclude-albums-refresh").addEventListener("click", () => {
   loadAlbumPicker(getSelectedAlbums(), true);
   loadExcludeAlbumPicker(getExcludeAlbums(), true);
+});
+
+document.getElementById("cfg-smart-folders-refresh").addEventListener("click", () => {
+  loadSmartFolderPicker(getSelectedSmartFolders(), true);
 });
 
 // ---------------------------------------------------------------------------
@@ -744,7 +771,7 @@ async function loadSettings() {
 
     loadExcludeAlbumPicker(excludedAlbums);
     document.getElementById("cfg-unfiled").checked = cfg.filters?.unfiled ?? true;
-    document.getElementById("cfg-smart-folders").value = (cfg.filters?.smart_folders ?? []).join(", ");
+    loadSmartFolderPicker(cfg.filters?.smart_folders ?? []);
     document.getElementById("cfg-recent").value = cfg.filters?.recent ?? "";
     document.getElementById("cfg-watch-interval").value = cfg.watch?.interval ?? "";
     document.getElementById("cfg-log-level").value = cfg.log_level ?? "";
@@ -868,7 +895,8 @@ async function saveSettings() {
   const albums = albumsAll
     ? (excludeAlbums ? excludeAlbums.map((album) => `!${album}`) : null)
     : (getSelectedAlbums().length > 0 ? getSelectedAlbums() : null);
-  const smartFolders = parseAlbums(document.getElementById("cfg-smart-folders").value) ?? null;
+  const selectedSmartFolders = getSelectedSmartFolders();
+  const smartFolders = selectedSmartFolders.length > 0 ? selectedSmartFolders : null;
   const unfiled = document.getElementById("cfg-unfiled").checked;
   const recent = parseInt(document.getElementById("cfg-recent").value, 10);
   const maxDownloadAttempts = parseInt(document.getElementById("cfg-max-download-attempts").value, 10);

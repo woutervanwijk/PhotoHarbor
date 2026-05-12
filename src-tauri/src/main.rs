@@ -400,6 +400,96 @@ async fn list_kei_albums() -> Result<Vec<String>, String> {
     }
 }
 
+const FALLBACK_SMART_FOLDERS: [&str; 10] = [
+    "Bursts",
+    "Favorites",
+    "Hidden",
+    "Live",
+    "Panoramas",
+    "Recently Deleted",
+    "Screenshots",
+    "Slo-mo",
+    "Time-lapse",
+    "Videos",
+];
+
+fn fallback_smart_folders() -> Vec<String> {
+    FALLBACK_SMART_FOLDERS
+        .iter()
+        .map(|folder| folder.to_string())
+        .collect()
+}
+
+fn smart_folders_from_kei_output(output: &str) -> Option<Vec<String>> {
+    let available = output.split("Available:").nth(1)?.trim();
+    let start = available.find('[')?;
+    let end = available[start..].find(']')? + start + 1;
+    let json = &available[start..end];
+    let folders: Vec<String> = serde_json::from_str(json).ok()?;
+    if folders.is_empty() {
+        None
+    } else {
+        Some(folders)
+    }
+}
+
+/// Return Apple's smart folder names as understood by kei.
+///
+/// kei does not currently expose `kei list smart-folders`, so we try to read
+/// the list from kei's own validation error and fall back to the same known
+/// Apple smart folders if the installed kei version cannot produce it.
+#[tauri::command]
+async fn list_kei_smart_folders() -> Result<Vec<String>, String> {
+    let Ok(kei_bin) = resolve_kei_bin().await else {
+        return Ok(fallback_smart_folders());
+    };
+
+    let config_path = std::env::temp_dir().join(format!(
+        "kei-photosync-smart-folders-{}-{}.toml",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default()
+    ));
+    let config = r#"[auth]
+username = "probe@example.com"
+
+[download]
+directory = "/tmp"
+
+[filters]
+smart_folders = ["__kei_photosync_probe__"]
+"#;
+
+    if std::fs::write(&config_path, config).is_err() {
+        return Ok(fallback_smart_folders());
+    }
+
+    let mut cmd = Command::new(&kei_bin);
+    cmd.args(["config", "--config"]);
+    cmd.arg(&config_path);
+    cmd.arg("show");
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+
+    let output = cmd.output().await;
+    let _ = std::fs::remove_file(&config_path);
+
+    if let Ok(output) = output {
+        let combined = format!(
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if let Some(folders) = smart_folders_from_kei_output(&combined) {
+            return Ok(folders);
+        }
+    }
+
+    Ok(fallback_smart_folders())
+}
+
 /// Delete any .lock files in the kei cookies directory.
 /// Returns true if at least one lock file was removed.
 async fn delete_kei_lock() -> bool {
@@ -1280,6 +1370,7 @@ fn main() {
             submit_2fa,
             clear_kei_session,
             list_kei_albums,
+            list_kei_smart_folders,
             get_recent_downloads,
             open_folder,
         ])
