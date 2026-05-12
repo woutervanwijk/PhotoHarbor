@@ -1,6 +1,6 @@
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { message, open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { parseLine, renderEntry, stripAnsi, dedupKey } from "./log-parsers.js";
@@ -69,6 +69,24 @@ function formatDuration(startSecs, endSecs) {
 
 function fmtNum(n) {
   return n === null || n === undefined ? "—" : n.toLocaleString();
+}
+
+function getUnknownSmartFolderWarning(raw) {
+  const clean = stripAnsi(String(raw))
+    .replace(/^\[err\]\s*/, "")
+    .replace(/^\[out\]\s*/, "")
+    .trim();
+  const match = clean.match(/(?:Error:\s*)?(?:"([^"]+)"|'([^']+)'|(.+?))\s+is not an Apple smart folder\b/i);
+  if (!match) return null;
+  const folder = (match[1] ?? match[2] ?? match[3]).trim();
+  const availableMatch = clean.match(/\bAvailable:\s*(.+)$/i);
+  const available = availableMatch?.[1]?.trim();
+  return {
+    title: "Unknown Apple Smart Folder",
+    body: available
+      ? `'${folder}' is not an Apple smart folder.\n\nAvailable smart folders: ${available}`
+      : `'${folder}' is not an Apple smart folder.`,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -308,6 +326,17 @@ function appendGlobalLog(raw) {
 // ---------------------------------------------------------------------------
 
 let syncRunning = false;
+let smartFolderWarningShown = false;
+
+async function showSmartFolderWarning(warning) {
+  if (smartFolderWarningShown) return;
+  smartFolderWarningShown = true;
+  try {
+    await message(warning.body, { title: warning.title, kind: "warning" });
+  } catch (err) {
+    console.error("smart folder warning dialog failed:", err);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Batched log rendering — incoming lines are queued and flushed at most once
@@ -404,6 +433,8 @@ function setSyncRunning(running) {
 listen("sync-output-batch", (event) => {
   for (const line of event.payload) {
     console.log("[kei]", line);
+    const smartFolderWarning = getUnknownSmartFolderWarning(line);
+    if (smartFolderWarning) showSmartFolderWarning(smartFolderWarning);
     _logQueue.push(line);
     appendGlobalLog(line);
   }
@@ -454,6 +485,7 @@ async function doStartSync() {
   document.getElementById("adp-warning").classList.add("hidden");
   hide2FAModal();
   setSyncRunning(true);
+  smartFolderWarningShown = false;
   syncLog.textContent = "";
   syncLogCompact.innerHTML = '<span class="log-compact-placeholder">—</span>';
   resetSyncDedup();
