@@ -132,33 +132,58 @@ document.getElementById("open-folder-btn").addEventListener("click", () => {
 const _lightboxOverlay = document.getElementById("lightbox-overlay");
 const _lightboxImg = document.getElementById("lightbox-img");
 const _lightboxVideo = document.getElementById("lightbox-video");
+let _lightboxAssets = [];
+let _lightboxIndex = -1;
 
-function openLightbox(src, isVideo) {
-  if (isVideo) {
+function showLightboxAsset(asset) {
+  if (asset.isVideo) {
     _lightboxImg.classList.add("hidden");
-    _lightboxVideo.src = src;
+    _lightboxImg.removeAttribute("src");
+    _lightboxVideo.src = asset.src;
     _lightboxVideo.classList.remove("hidden");
   } else {
     _lightboxVideo.pause();
     _lightboxVideo.removeAttribute("src");
     _lightboxVideo.classList.add("hidden");
-    _lightboxImg.src = src;
+    _lightboxImg.src = asset.src;
     _lightboxImg.classList.remove("hidden");
   }
+}
+
+function openLightbox(index) {
+  if (index < 0 || index >= _lightboxAssets.length) return;
+  _lightboxIndex = index;
+  showLightboxAsset(_lightboxAssets[_lightboxIndex]);
   _lightboxOverlay.classList.remove("hidden");
 }
 
 function closeLightbox() {
   _lightboxOverlay.classList.add("hidden");
+  _lightboxIndex = -1;
   _lightboxVideo.pause();
   _lightboxVideo.removeAttribute("src");
   _lightboxImg.removeAttribute("src");
 }
 
+function navigateLightbox(delta) {
+  if (_lightboxOverlay.classList.contains("hidden") || _lightboxAssets.length < 2) return;
+  _lightboxIndex = (_lightboxIndex + delta + _lightboxAssets.length) % _lightboxAssets.length;
+  showLightboxAsset(_lightboxAssets[_lightboxIndex]);
+}
+
 document.getElementById("lightbox-close").addEventListener("click", closeLightbox);
 _lightboxOverlay.addEventListener("click", (e) => { if (e.target === _lightboxOverlay) closeLightbox(); });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !_lightboxOverlay.classList.contains("hidden")) closeLightbox();
+  if (_lightboxOverlay.classList.contains("hidden")) return;
+  if (e.key === "Escape") {
+    closeLightbox();
+  } else if (e.key === "ArrowLeft") {
+    e.preventDefault();
+    navigateLightbox(-1);
+  } else if (e.key === "ArrowRight") {
+    e.preventDefault();
+    navigateLightbox(1);
+  }
 });
 
 
@@ -174,12 +199,25 @@ async function loadRecentThumbnails() {
 
     _thumbsListEl.innerHTML = "";
     const newPaths = new Set(assets.map((a) => a.path));
+    const currentLightboxPath = _lightboxIndex >= 0 ? _lightboxAssets[_lightboxIndex]?.path : null;
+    _lightboxAssets = assets.map((asset) => ({
+      path: asset.path,
+      src: convertFileSrc(asset.path),
+      isVideo: asset.is_video,
+    }));
+    if (currentLightboxPath) {
+      _lightboxIndex = _lightboxAssets.findIndex((asset) => asset.path === currentLightboxPath);
+      if (_lightboxIndex === -1) closeLightbox();
+    }
 
-    for (const asset of assets) {
+    for (const [index, asset] of assets.entries()) {
       const isNew = !_shownThumbPaths.has(asset.path);
       const item = document.createElement("div");
       item.className = "thumb-item" + (isNew ? " thumb-item--new" : "");
-      const src = convertFileSrc(asset.path);
+      item.tabIndex = 0;
+      item.role = "button";
+      const lightboxAsset = _lightboxAssets[index];
+      const src = lightboxAsset.src;
 
       if (asset.is_video) {
         const video = document.createElement("video");
@@ -188,12 +226,34 @@ async function loadRecentThumbnails() {
         video.preload = "auto";
         video.src = src;
         video.onerror = () => item.remove();
+        let previewTime = 0;
+        let previewActive = false;
         video.addEventListener("loadedmetadata", () => {
-          video.currentTime = Math.min(1, (video.duration || 10) * 0.1);
+          previewTime = Math.min(1, (video.duration || 10) * 0.1);
+          video.currentTime = previewTime;
         }, { once: true });
         video.addEventListener("seeked", () => {
-          video.play().then(() => video.pause()).catch(() => {});
+          if (!previewActive) {
+            video.play().then(() => {
+              if (!previewActive) video.pause();
+            }).catch(() => {});
+          }
         }, { once: true });
+        const playPreview = () => {
+          previewActive = true;
+          video.play().catch(() => {});
+        };
+        const pausePreview = () => {
+          previewActive = false;
+          video.pause();
+          if (Number.isFinite(video.duration) && video.readyState > 0) {
+            video.currentTime = previewTime;
+          }
+        };
+        item.addEventListener("pointerenter", playPreview);
+        item.addEventListener("pointerleave", pausePreview);
+        item.addEventListener("focus", playPreview);
+        item.addEventListener("blur", pausePreview);
         item.appendChild(video);
         const badge = document.createElement("div");
         badge.className = "thumb-video-badge";
@@ -207,7 +267,13 @@ async function loadRecentThumbnails() {
         item.appendChild(img);
       }
 
-      item.addEventListener("click", () => openLightbox(src, asset.is_video));
+      item.addEventListener("click", () => openLightbox(index));
+      item.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          openLightbox(index);
+        }
+      });
       _thumbsListEl.appendChild(item);
     }
 
