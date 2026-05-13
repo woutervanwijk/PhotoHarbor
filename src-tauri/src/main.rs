@@ -1124,7 +1124,7 @@ fn collect_media_files(
 }
 
 #[tauri::command]
-async fn get_recent_downloads(directory: String) -> Vec<RecentAsset> {
+async fn get_recent_downloads(directory: String, newer_than: Option<u64>) -> Vec<RecentAsset> {
     let dir = std::path::PathBuf::from(expand_tilde(&directory));
 
     tokio::task::spawn_blocking(move || {
@@ -1132,6 +1132,13 @@ async fn get_recent_downloads(directory: String) -> Vec<RecentAsset> {
             return vec![];
         }
         let mut files = collect_media_files(&dir);
+        if let Some(cutoff) = newer_than {
+            files.retain(|(ts, _, _)| {
+                ts.duration_since(std::time::UNIX_EPOCH)
+                    .map(|duration| duration.as_secs() > cutoff)
+                    .unwrap_or(false)
+            });
+        }
         files.sort_by(|a, b| b.0.cmp(&a.0));
         files.truncate(12);
         files

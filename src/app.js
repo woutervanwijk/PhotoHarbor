@@ -123,6 +123,17 @@ const _thumbsListEl = document.getElementById("thumbnails-list");
 let _thumbPollInterval = null;
 let _shownThumbPaths = new Set();
 let _thumbDirectory = null;
+let _thumbLoadGeneration = 0;
+
+function recentClearStorageKey(directory) {
+  return `kei-photosync:recent-cleared-before:${directory}`;
+}
+
+function getRecentClearCutoff(directory) {
+  const value = localStorage.getItem(recentClearStorageKey(directory));
+  const cutoff = value ? Number.parseInt(value, 10) : null;
+  return Number.isFinite(cutoff) ? cutoff : null;
+}
 
 document.getElementById("open-folder-btn").addEventListener("click", () => {
   if (_thumbDirectory) invoke("open_folder", { path: _thumbDirectory }).catch(() => {});
@@ -165,6 +176,22 @@ function closeLightbox() {
   _lightboxImg.removeAttribute("src");
 }
 
+function clearRecentThumbnails(persistCutoff = false, directoryOverride = null) {
+  _thumbLoadGeneration++;
+  const directory = directoryOverride || _thumbDirectory;
+  if (persistCutoff && directory) {
+    localStorage.setItem(
+      recentClearStorageKey(directory),
+      String(Math.floor(Date.now() / 1000)),
+    );
+  }
+  closeLightbox();
+  _thumbsListEl.innerHTML = "";
+  _thumbsEl.classList.add("hidden");
+  _shownThumbPaths = new Set();
+  _lightboxAssets = [];
+}
+
 function navigateLightbox(delta) {
   if (_lightboxOverlay.classList.contains("hidden") || _lightboxAssets.length < 2) return;
   _lightboxIndex = (_lightboxIndex + delta + _lightboxAssets.length) % _lightboxAssets.length;
@@ -188,13 +215,18 @@ document.addEventListener("keydown", (e) => {
 
 
 async function loadRecentThumbnails() {
+  const generation = _thumbLoadGeneration;
   try {
     const cfg = await invoke("get_config");
     const directory = cfg.download?.directory;
     if (!directory) { _thumbsEl.classList.add("hidden"); return; }
 
     _thumbDirectory = directory;
-    const assets = await invoke("get_recent_downloads", { directory });
+    const assets = await invoke("get_recent_downloads", {
+      directory,
+      newerThan: getRecentClearCutoff(directory),
+    });
+    if (generation !== _thumbLoadGeneration) return;
     if (!assets || assets.length === 0) { _thumbsEl.classList.add("hidden"); return; }
 
     _thumbsListEl.innerHTML = "";
@@ -304,6 +336,13 @@ const startBtn = document.getElementById("sync-start-btn");
 const stopBtn = document.getElementById("sync-stop-btn");
 const badge = document.getElementById("sync-status-badge");
 const progressWrap = document.getElementById("progress-bar-wrap");
+const progressInner = document.getElementById("progress-bar-inner");
+const progressTitle = document.getElementById("sync-progress-title");
+const progressPercent = document.getElementById("sync-progress-percent");
+const progressDetail = document.getElementById("sync-progress-detail");
+const progressDownloaded = document.getElementById("sync-progress-downloaded");
+const progressFailed = document.getElementById("sync-progress-failed");
+const progressTotal = document.getElementById("sync-progress-total");
 
 let logExpanded = false;
 
@@ -343,6 +382,16 @@ document.getElementById("log-panel-close-btn").addEventListener("click", () => s
 document.getElementById("global-log-clear-btn").addEventListener("click", () => {
   globalLog.textContent = "";
 });
+
+function clearLogs() {
+  _logQueue.length = 0;
+  syncLog.textContent = "";
+  syncLogCompact.innerHTML = '<span class="log-compact-placeholder">—</span>';
+  globalLog.textContent = "";
+  logUnread = false;
+  logBadge.classList.remove("visible");
+  resetSyncDedup();
+}
 
 // Drag-to-resize handle
 const resizeHandle = document.getElementById("log-panel-resize");
@@ -401,6 +450,131 @@ async function showSmartFolderWarning(warning) {
     await message(warning.body, { title: warning.title, kind: "warning" });
   } catch (err) {
     console.error("smart folder warning dialog failed:", err);
+  }
+}
+
+let syncProgress = null;
+
+function resetSyncProgress() {
+  syncProgress = {
+    title: "Preparing sync",
+    detail: "Starting kei",
+    downloaded: 0,
+    failed: 0,
+    skipped: 0,
+    total: null,
+  };
+  renderSyncProgress();
+}
+
+function numericField(parsed, names = []) {
+  if (!parsed.fields) return null;
+  const preferred = parsed.fields.find(({ key }) => names.includes(key.toLowerCase()));
+  const fallback = parsed.fields.find(({ value }) => /^\d+$/.test(value));
+  const value = preferred?.value ?? fallback?.value;
+  if (!value || !/^\d+$/.test(value)) return null;
+  return Number.parseInt(value, 10);
+}
+
+function setProgressPatch(patch) {
+  if (!syncProgress) resetSyncProgress();
+  syncProgress = { ...syncProgress, ...patch };
+  renderSyncProgress();
+}
+
+function renderSyncProgress() {
+  if (!syncProgress) return;
+  progressTitle.textContent = syncProgress.title;
+  progressDetail.textContent = syncProgress.detail;
+  progressDownloaded.textContent = `${fmtNum(syncProgress.downloaded)} downloaded`;
+  progressFailed.textContent = `${fmtNum(syncProgress.failed)} failed`;
+
+  if (syncProgress.total && syncProgress.total > 0) {
+    const complete = Math.min(syncProgress.total, syncProgress.downloaded + syncProgress.failed);
+    const percent = Math.round((complete / syncProgress.total) * 100);
+    progressPercent.textContent = `${percent}%`;
+    progressTotal.textContent = `${fmtNum(complete)} of ${fmtNum(syncProgress.total)}`;
+    progressInner.classList.add("determinate");
+    progressInner.style.width = `${Math.max(2, percent)}%`;
+    progressInner.style.transform = "none";
+  } else {
+    progressPercent.textContent = "Scanning";
+    progressTotal.textContent = syncProgress.skipped > 0
+      ? `${fmtNum(syncProgress.skipped)} already on disk`
+      : "Scanning";
+    progressInner.classList.remove("determinate");
+    progressInner.style.width = "30%";
+    progressInner.style.transform = "";
+  }
+}
+
+function updateSyncProgressFromLine(raw) {
+  if (!syncProgress) return;
+  const clean = stripAnsi(String(raw))
+    .replace(/^\[err\]\s*/, "")
+    .replace(/^\[out\]\s*/, "")
+    .trim();
+  const parsed = parseLine(raw);
+  const msg = parsed.message ?? parsed.text ?? clean;
+
+  const summary = clean.match(/^sync results:\s+(\d+)\s+downloaded,\s+(\d+)\s+failed,\s+(\d+)\s+total/i);
+  if (summary) {
+    setProgressPatch({
+      title: "Sync results",
+      detail: `${fmtNum(Number(summary[1]))} downloaded, ${fmtNum(Number(summary[2]))} failed`,
+      downloaded: Number(summary[1]),
+      failed: Number(summary[2]),
+      total: Number(summary[3]),
+    });
+    return;
+  }
+
+  const friendlyDownloaded = clean.match(/^✓\s+Downloaded\s+([\d,]+)\s+new files?/i);
+  if (friendlyDownloaded) {
+    setProgressPatch({
+      title: "Downloaded files",
+      detail: clean.replace(/^✓\s+/, ""),
+      downloaded: Number(friendlyDownloaded[1].replace(/,/g, "")),
+    });
+    return;
+  }
+
+  if (/^✓\s+Authenticated as /i.test(clean) || msg === "Authentication completed successfully") {
+    setProgressPatch({ title: "Authenticated", detail: clean.replace(/^✓\s+/, "") || "Signed in to iCloud" });
+  } else if (/^✓\s+Listed /i.test(clean)) {
+    setProgressPatch({ title: "Scanning libraries", detail: clean.replace(/^✓\s+/, "") });
+  } else if (/No sync token|full enumeration|Incremental sync/i.test(msg)) {
+    setProgressPatch({ title: "Scanning iCloud", detail: msg });
+  } else if (/No new photos to download/i.test(msg)) {
+    setProgressPatch({ title: "Up to date", detail: "No new photos to download" });
+  } else if (/Assets to download/i.test(msg)) {
+    const total = numericField(parsed, ["count", "total", "assets", "to_download", "assets_to_download"]);
+    setProgressPatch({
+      title: "Ready to download",
+      detail: total ? `${fmtNum(total)} files queued` : msg,
+      total: total ?? syncProgress.total,
+    });
+  } else if (/Downloading files/i.test(msg)) {
+    setProgressPatch({ title: "Downloading from iCloud", detail: msg });
+  } else if (/Skipping asset: file exists/i.test(msg)) {
+    setProgressPatch({
+      detail: "Already on disk, skipping",
+      skipped: syncProgress.skipped + 1,
+    });
+  } else if (/download/i.test(msg) && /complete|saved|finished/i.test(msg)) {
+    setProgressPatch({
+      title: "Downloading from iCloud",
+      detail: msg,
+      downloaded: syncProgress.downloaded + 1,
+    });
+  } else if ((parsed.level === "ERROR" || /^Error:/i.test(clean)) && /download|asset|file/i.test(clean)) {
+    setProgressPatch({
+      title: "Download issue",
+      detail: msg,
+      failed: syncProgress.failed + 1,
+    });
+  } else if (/^✓\s+Verified /i.test(clean)) {
+    setProgressPatch({ title: "Verified downloads", detail: clean.replace(/^✓\s+/, "") });
   }
 }
 
@@ -501,6 +675,7 @@ listen("sync-output-batch", (event) => {
     console.log("[kei]", line);
     const smartFolderWarning = getUnknownSmartFolderWarning(line);
     if (smartFolderWarning) showSmartFolderWarning(smartFolderWarning);
+    updateSyncProgressFromLine(line);
     _logQueue.push(line);
     appendGlobalLog(line);
   }
@@ -511,12 +686,14 @@ listen("sync-output-batch", (event) => {
 });
 listen("sync-2fa-required", () => show2FAModal());
 listen("sync-completed", () => {
+  setProgressPatch({ title: "Sync complete", detail: "Finished syncing" });
   setSyncRunning(false);
   appendLog("── Sync completed ──", "success");
   appendGlobalLog("── Sync completed ──");
   loadDashboard();
 });
 listen("sync-failed", (event) => {
+  setProgressPatch({ title: "Sync failed", detail: String(event.payload) });
   setSyncRunning(false);
   appendLog(`── Sync failed: ${event.payload} ──`, "err");
   appendGlobalLog(`── Sync failed: ${event.payload} ──`);
@@ -550,6 +727,7 @@ async function doStartSync() {
 
   document.getElementById("adp-warning").classList.add("hidden");
   hide2FAModal();
+  resetSyncProgress();
   setSyncRunning(true);
   smartFolderWarningShown = false;
   syncLog.textContent = "";
@@ -662,8 +840,9 @@ document.getElementById("history-clear-btn").addEventListener("click", async () 
   try {
     await invoke("clear_history_and_stats");
     await Promise.all([loadHistory(), loadDashboard()]);
-    _thumbsEl.classList.add("hidden");
-    _shownThumbPaths = new Set();
+    const cfg = await invoke("get_config").catch(() => null);
+    clearRecentThumbnails(true, cfg?.download?.directory);
+    clearLogs();
     await message("History and statistics were cleared.", {
       title: "History Cleared",
       kind: "info",

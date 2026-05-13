@@ -81,7 +81,19 @@
           <span id="sync-status-badge" class="badge">Idle</span>
         </div>
         <div id="progress-bar-wrap" class="hidden">
-          <div id="progress-bar-inner"></div>
+          <div class="progress-card-top">
+            <span id="sync-progress-title">Preparing sync</span>
+            <span id="sync-progress-percent">—</span>
+          </div>
+          <div class="progress-track">
+            <div id="progress-bar-inner"></div>
+          </div>
+          <div id="sync-progress-detail">Starting kei</div>
+          <div class="progress-stats">
+            <span id="sync-progress-downloaded">0 downloaded</span>
+            <span id="sync-progress-failed">0 failed</span>
+            <span id="sync-progress-total">Scanning</span>
+          </div>
         </div>
         <div id="adp-warning" class="notice notice--warn hidden">
           <strong>Advanced Data Protection detected.</strong>
