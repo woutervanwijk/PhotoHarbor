@@ -1,6 +1,6 @@
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { message, open as openDialog } from "@tauri-apps/plugin-dialog";
+import { confirm, message, open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { parseLine, renderEntry, stripAnsi, dedupKey } from "./log-parsers.js";
@@ -641,6 +641,42 @@ async function loadHistory() {
     tbody.innerHTML = `<tr><td colspan="7" class="empty-row">Error loading history: ${err}</td></tr>`;
   }
 }
+
+document.getElementById("history-clear-btn").addEventListener("click", async () => {
+  if (syncRunning) {
+    await message("Stop the current sync before clearing history and statistics.", {
+      title: "Sync Running",
+      kind: "warning",
+    });
+    return;
+  }
+
+  const shouldClear = await confirm(
+    "This clears the local kei history, dashboard statistics, and sync state for the configured account. Downloaded files and login/session data are kept.",
+    { title: "Clear History and Statistics?", kind: "warning" },
+  );
+  if (!shouldClear) return;
+
+  const btn = document.getElementById("history-clear-btn");
+  btn.disabled = true;
+  try {
+    await invoke("clear_history_and_stats");
+    await Promise.all([loadHistory(), loadDashboard()]);
+    _thumbsEl.classList.add("hidden");
+    _shownThumbPaths = new Set();
+    await message("History and statistics were cleared.", {
+      title: "History Cleared",
+      kind: "info",
+    });
+  } catch (err) {
+    await message(`Failed to clear history and statistics:\n${err}`, {
+      title: "Clear Failed",
+      kind: "error",
+    });
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Settings view

@@ -658,9 +658,10 @@ html, body {
 /* Compact single-entry status view */
 #sync-log-compact {
   padding: 2px 0;
-  min-height: 36px;
+  height: 45px;
   display: flex;
   align-items: center;
+  overflow: hidden;
 }
 
 #sync-log-compact .log-entry {
@@ -726,6 +727,12 @@ html, body {
 }
 
 /* ── History table ───────────────────────────────────────────────────────── */
+
+.history-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
 
 #history-table {
   width: 100%;

@@ -345,6 +345,42 @@ async fn get_history() -> Result<Vec<SyncRun>, String> {
     .map_err(|e| e.to_string())?
 }
 
+#[tauri::command]
+async fn clear_history_and_stats(state: State<'_, AppState>) -> Result<(), String> {
+    if state.sync_child.lock().await.is_some() {
+        return Err("Cannot clear history while a sync is running".to_string());
+    }
+
+    let config = get_config().await.unwrap_or_default();
+    let username = config
+        .auth
+        .as_ref()
+        .and_then(|a| a.username.clone())
+        .unwrap_or_default();
+
+    if username.is_empty() {
+        return Ok(());
+    }
+
+    let db = match db_path(&username) {
+        Ok(p) => p,
+        Err(_) => return Ok(()),
+    };
+
+    let mut paths = vec![db.clone()];
+    paths.push(db.with_extension("db-wal"));
+    paths.push(db.with_extension("db-shm"));
+
+    for path in paths {
+        if path.exists() {
+            std::fs::remove_file(&path)
+                .map_err(|e| format!("Failed to remove {}: {e}", path.display()))?;
+        }
+    }
+
+    Ok(())
+}
+
 /// Detect whether a line indicates kei is blocked by Advanced Data Protection.
 /// Matches the patterns documented on the kei Authentication wiki page:
 ///   https://github.com/rhoopr/kei/wiki/Authentication#how-it-looks-when-adp-blocks-kei
@@ -1363,6 +1399,7 @@ fn main() {
             get_kei_versions,
             get_status,
             get_history,
+            clear_history_and_stats,
             start_sync,
             stop_sync,
             submit_password,
