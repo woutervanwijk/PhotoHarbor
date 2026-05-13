@@ -348,6 +348,7 @@ let logExpanded = false;
 
 function setLogExpanded(expanded) {
   logExpanded = expanded;
+  syncLogCompact.classList.toggle("hidden", expanded);
   syncLog.classList.toggle("hidden", !expanded);
   logExpandBtn.classList.toggle("expanded", expanded);
   if (expanded) syncLog.scrollTop = syncLog.scrollHeight;

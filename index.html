@@ -80,6 +80,13 @@
           <button type="button" class="btn-destructive" id="sync-stop-btn" disabled>Stop</button>
           <span id="sync-status-badge" class="badge">Idle</span>
         </div>
+        <div id="recent-thumbnails" class="recent-thumbnails hidden">
+          <div class="thumbs-header">
+            <span class="thumbs-label">Recently synced</span>
+            <button type="button" class="btn-ghost btn-sm" id="open-folder-btn">Open folder ↗</button>
+          </div>
+          <div id="thumbnails-list" class="thumbnails-list"></div>
+        </div>
         <div id="progress-bar-wrap" class="hidden">
           <div class="progress-card-top">
             <span id="sync-progress-title">Preparing sync</span>
@@ -110,13 +117,6 @@
           <button type="button" id="log-expand-btn" title="Toggle full log">
             <span class="log-expand-chevron"></span>
           </button>
-        </div>
-        <div id="recent-thumbnails" class="recent-thumbnails hidden">
-          <div class="thumbs-header">
-            <span class="thumbs-label">Recently synced</span>
-            <button type="button" class="btn-ghost btn-sm" id="open-folder-btn">Open folder ↗</button>
-          </div>
-          <div id="thumbnails-list" class="thumbnails-list"></div>
         </div>
         <div class="section-card last-sync-card">
           <h2>Last Sync</h2>
