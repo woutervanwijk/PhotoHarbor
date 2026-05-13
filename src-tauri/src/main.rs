@@ -71,6 +71,7 @@ pub struct SyncStatus {
     pub downloaded: i64,
     pub pending: i64,
     pub failed: i64,
+    pub last_run_seen: Option<i64>,
     pub last_run_started: Option<i64>,
     pub last_run_completed: Option<i64>,
     pub last_run_downloaded: Option<i64>,
@@ -227,6 +228,7 @@ async fn get_status(state: State<'_, AppState>) -> Result<SyncStatus, String> {
             downloaded: 0,
             pending: 0,
             failed: 0,
+            last_run_seen: None,
             last_run_started: None,
             last_run_completed: None,
             last_run_downloaded: None,
@@ -243,6 +245,7 @@ async fn get_status(state: State<'_, AppState>) -> Result<SyncStatus, String> {
                 downloaded: 0,
                 pending: 0,
                 failed: 0,
+                last_run_seen: None,
                 last_run_started: None,
                 last_run_completed: None,
                 last_run_downloaded: None,
@@ -271,12 +274,12 @@ async fn get_status(state: State<'_, AppState>) -> Result<SyncStatus, String> {
             .unwrap_or(0);
 
         // Last sync_run row
-        let last_run: Option<(i64, Option<i64>, i64, i64)> = conn
+        let last_run: Option<(i64, Option<i64>, i64, i64, i64)> = conn
             .query_row(
-                "SELECT started_at, completed_at, assets_downloaded, assets_failed
+                "SELECT started_at, completed_at, assets_seen, assets_downloaded, assets_failed
                  FROM sync_runs ORDER BY id DESC LIMIT 1",
                 [],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
             )
             .ok();
 
@@ -285,10 +288,11 @@ async fn get_status(state: State<'_, AppState>) -> Result<SyncStatus, String> {
             downloaded,
             pending,
             failed,
+            last_run_seen: last_run.as_ref().map(|r| r.2),
             last_run_started: last_run.as_ref().map(|r| r.0),
             last_run_completed: last_run.as_ref().and_then(|r| r.1),
-            last_run_downloaded: last_run.as_ref().map(|r| r.2),
-            last_run_failed: last_run.as_ref().map(|r| r.3),
+            last_run_downloaded: last_run.as_ref().map(|r| r.3),
+            last_run_failed: last_run.as_ref().map(|r| r.4),
             is_syncing,
         })
     })

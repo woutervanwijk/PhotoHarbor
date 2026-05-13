@@ -88,18 +88,22 @@
           <div id="thumbnails-list" class="thumbnails-list"></div>
         </div>
         <div id="progress-bar-wrap" class="hidden">
-          <div class="progress-card-top">
-            <span id="sync-progress-title">Preparing sync</span>
-            <span id="sync-progress-percent">—</span>
-          </div>
-          <div class="progress-track">
-            <div id="progress-bar-inner"></div>
-          </div>
-          <div id="sync-progress-detail">Starting kei</div>
-          <div class="progress-stats">
-            <span id="sync-progress-downloaded">0 downloaded</span>
-            <span id="sync-progress-failed">0 failed</span>
-            <span id="sync-progress-total">Scanning</span>
+          <div id="sync-progress-lifecycle" class="progress-lifecycle"></div>
+          <div class="friendly-progress-card">
+            <div class="friendly-progress-title">
+              <span>kei · downloading from iCloud</span>
+            </div>
+            <div class="friendly-progress-body">
+              <div id="sync-progress-detail" class="friendly-progress-detail">Starting kei</div>
+              <div class="friendly-progress-track">
+                <div id="progress-bar-inner"></div>
+              </div>
+              <div class="friendly-progress-footer">
+                <span id="sync-progress-speed">-- B/s</span>
+                <span id="sync-progress-total">0/0 · calculating...</span>
+                <span id="sync-progress-percent">0% ◓</span>
+              </div>
+            </div>
           </div>
         </div>
         <div id="adp-warning" class="notice notice--warn hidden">

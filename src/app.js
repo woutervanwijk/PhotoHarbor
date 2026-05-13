@@ -337,12 +337,11 @@ const stopBtn = document.getElementById("sync-stop-btn");
 const badge = document.getElementById("sync-status-badge");
 const progressWrap = document.getElementById("progress-bar-wrap");
 const progressInner = document.getElementById("progress-bar-inner");
-const progressTitle = document.getElementById("sync-progress-title");
 const progressPercent = document.getElementById("sync-progress-percent");
 const progressDetail = document.getElementById("sync-progress-detail");
-const progressDownloaded = document.getElementById("sync-progress-downloaded");
-const progressFailed = document.getElementById("sync-progress-failed");
+const progressSpeed = document.getElementById("sync-progress-speed");
 const progressTotal = document.getElementById("sync-progress-total");
+const progressLifecycle = document.getElementById("sync-progress-lifecycle");
 
 let logExpanded = false;
 
@@ -455,6 +454,9 @@ async function showSmartFolderWarning(warning) {
 }
 
 let syncProgress = null;
+let syncProgressPollInterval = null;
+let syncProgressAnimationInterval = null;
+const PROGRESS_SPINNER_FRAMES = ["◓", "◑", "◒", "◐"];
 
 function resetSyncProgress() {
   syncProgress = {
@@ -464,6 +466,13 @@ function resetSyncProgress() {
     failed: 0,
     skipped: 0,
     total: null,
+    speed: "-- B/s",
+    eta: "calculating...",
+    spinner: "◓",
+    spinnerIndex: 0,
+    visualPercent: 0,
+    lifecycle: [],
+    friendlySeen: false,
   };
   renderSyncProgress();
 }
@@ -480,33 +489,148 @@ function numericField(parsed, names = []) {
 function setProgressPatch(patch) {
   if (!syncProgress) resetSyncProgress();
   syncProgress = { ...syncProgress, ...patch };
+  const realPercent = getRealProgressPercent();
+  if (realPercent !== null) {
+    syncProgress.visualPercent = Math.max(syncProgress.visualPercent ?? 0, realPercent);
+  }
   renderSyncProgress();
+}
+
+function getRealProgressPercent() {
+  if (!syncProgress?.total || syncProgress.total <= 0) return null;
+  const complete = Math.min(syncProgress.total, syncProgress.downloaded + syncProgress.failed);
+  return Math.round((complete / syncProgress.total) * 100);
 }
 
 function renderSyncProgress() {
   if (!syncProgress) return;
-  progressTitle.textContent = syncProgress.title;
   progressDetail.textContent = syncProgress.detail;
-  progressDownloaded.textContent = `${fmtNum(syncProgress.downloaded)} downloaded`;
-  progressFailed.textContent = `${fmtNum(syncProgress.failed)} failed`;
+  progressSpeed.textContent = syncProgress.speed;
+  renderProgressLifecycle();
+
+  const realPercent = getRealProgressPercent();
+  const visualPercent = Math.min(100, Math.max(realPercent ?? 0, syncProgress.visualPercent ?? 0));
 
   if (syncProgress.total && syncProgress.total > 0) {
     const complete = Math.min(syncProgress.total, syncProgress.downloaded + syncProgress.failed);
-    const percent = Math.round((complete / syncProgress.total) * 100);
-    progressPercent.textContent = `${percent}%`;
-    progressTotal.textContent = `${fmtNum(complete)} of ${fmtNum(syncProgress.total)}`;
-    progressInner.classList.add("determinate");
-    progressInner.style.width = `${Math.max(2, percent)}%`;
+    progressPercent.textContent = `${Math.round(visualPercent)}% ${syncProgress.spinner}`;
+    progressTotal.textContent = `${fmtNum(complete)}/${fmtNum(syncProgress.total)} · ${syncProgress.eta}`;
+    progressInner.style.width = `${visualPercent}%`;
     progressInner.style.transform = "none";
   } else {
-    progressPercent.textContent = "Scanning";
+    progressPercent.textContent = `${Math.round(visualPercent)}% ${syncProgress.spinner}`;
     progressTotal.textContent = syncProgress.skipped > 0
-      ? `${fmtNum(syncProgress.skipped)} already on disk`
-      : "Scanning";
-    progressInner.classList.remove("determinate");
-    progressInner.style.width = "30%";
+      ? `${fmtNum(syncProgress.skipped)} skipped · ${syncProgress.eta}`
+      : `0/0 · ${syncProgress.eta}`;
+    progressInner.style.width = `${visualPercent}%`;
     progressInner.style.transform = "";
   }
+}
+
+function renderProgressLifecycle() {
+  progressLifecycle.innerHTML = "";
+  for (const item of syncProgress.lifecycle.slice(-7)) {
+    const row = document.createElement("div");
+    row.className = "progress-life-row";
+    row.innerHTML = `
+      <span class="progress-life-check">✓</span>
+      <span class="progress-life-name"></span>
+      <span class="progress-life-count"></span>
+      <span class="progress-life-time"></span>
+    `;
+    row.querySelector(".progress-life-name").textContent = item.name;
+    row.querySelector(".progress-life-count").textContent = item.count ?? "";
+    row.querySelector(".progress-life-time").textContent = item.time ?? "";
+    progressLifecycle.appendChild(row);
+  }
+}
+
+function upsertProgressLifecycle(item) {
+  if (!syncProgress) resetSyncProgress();
+  const key = item.key ?? item.name;
+  const existing = syncProgress.lifecycle.findIndex((entry) => (entry.key ?? entry.name) === key);
+  const next = { key, ...item };
+  if (existing === -1) syncProgress.lifecycle.push(next);
+  else syncProgress.lifecycle[existing] = { ...syncProgress.lifecycle[existing], ...next };
+  renderSyncProgress();
+}
+
+async function pollSyncProgress() {
+  if (!syncRunning || !syncProgress) return;
+  if (syncProgress.friendlySeen) return;
+  try {
+    const status = await invoke("get_status");
+    const downloaded = Math.max(0, status.last_run_downloaded ?? 0);
+    const failed = Math.max(0, status.last_run_failed ?? 0);
+    const pending = Math.max(0, status.pending ?? 0);
+    const runSeen = Math.max(0, status.last_run_seen ?? 0);
+    const total = Math.max(runSeen, downloaded + failed + pending);
+
+    if (total > 0) {
+      setProgressPatch({
+        title: downloaded + failed > 0 ? "Downloading from iCloud" : "Scanning iCloud",
+        detail: pending > 0
+          ? `${fmtNum(pending)} files remaining`
+          : "Finalizing sync state",
+        downloaded,
+        failed,
+        total,
+      });
+    } else {
+      setProgressPatch({
+        title: "Scanning iCloud",
+        detail: "Counting photos and albums",
+      });
+    }
+  } catch (err) {
+    console.error("progress poll failed:", err);
+  }
+}
+
+function startSyncProgressPolling() {
+  if (syncProgressPollInterval) return;
+  pollSyncProgress();
+  syncProgressPollInterval = setInterval(pollSyncProgress, 2000);
+}
+
+function stopSyncProgressPolling() {
+  if (!syncProgressPollInterval) return;
+  clearInterval(syncProgressPollInterval);
+  syncProgressPollInterval = null;
+}
+
+function tickSyncProgressAnimation() {
+  if (!syncRunning || !syncProgress) return;
+  syncProgress.spinnerIndex = (syncProgress.spinnerIndex + 1) % PROGRESS_SPINNER_FRAMES.length;
+  syncProgress.spinner = PROGRESS_SPINNER_FRAMES[syncProgress.spinnerIndex];
+
+  const realPercent = getRealProgressPercent();
+  const current = Math.max(syncProgress.visualPercent ?? 0, realPercent ?? 0);
+  const hasTotal = syncProgress.total && syncProgress.total > 0;
+  const cap = hasTotal
+    ? (realPercent >= 100 ? 100 : 96)
+    : (/scanning|preparing/i.test(syncProgress.title) ? 38 : 72);
+
+  if (current < cap) {
+    const step = Math.max(0.2, (cap - current) * 0.025);
+    syncProgress.visualPercent = Math.min(cap, current + step);
+  } else {
+    syncProgress.visualPercent = current;
+  }
+
+  renderSyncProgress();
+}
+
+function startSyncProgressAnimation() {
+  if (syncProgressAnimationInterval) return;
+  tickSyncProgressAnimation();
+  syncProgressAnimationInterval = setInterval(tickSyncProgressAnimation, 900);
+}
+
+function stopSyncProgressAnimation() {
+  if (!syncProgressAnimationInterval) return;
+  clearInterval(syncProgressAnimationInterval);
+  syncProgressAnimationInterval = null;
 }
 
 function updateSyncProgressFromLine(raw) {
@@ -515,6 +639,76 @@ function updateSyncProgressFromLine(raw) {
     .replace(/^\[err\]\s*/, "")
     .replace(/^\[out\]\s*/, "")
     .trim();
+
+  const friendlyAuth = clean.match(/✓\s+Authenticated as\s+(.+)/i);
+  if (friendlyAuth) {
+    syncProgress.friendlySeen = true;
+    upsertProgressLifecycle({ key: "auth", name: `Authenticated as ${friendlyAuth[1].trim()}` });
+  }
+
+  const friendlyLibraries = clean.match(/✓\s+Listed\s+(.+)/i);
+  if (friendlyLibraries) {
+    syncProgress.friendlySeen = true;
+    upsertProgressLifecycle({ key: "libraries", name: `Listed ${friendlyLibraries[1].trim()}` });
+  }
+
+  for (const albumMatch of clean.matchAll(/✓\s+(.+?)\s+([\d,]+)\s*\/\s*([\d,]+)\s+(\d+[smh])/g)) {
+    syncProgress.friendlySeen = true;
+    const [, name, done, total, time] = albumMatch;
+    upsertProgressLifecycle({
+      key: `album:${name.trim()}`,
+      name: name.trim(),
+      count: `${done}/${total}`,
+      time,
+    });
+  }
+
+  const friendlyDetail = clean.match(/│\s+(.+?)\s+·\s+(.+?)(?=\s*$)/);
+  if (friendlyDetail && !/[\\/\d]+\s+·/.test(friendlyDetail[1])) {
+    setProgressPatch({
+      friendlySeen: true,
+      detail: `${friendlyDetail[1].trim()} · ${friendlyDetail[2].trim()}`,
+    });
+  }
+
+  const friendlyPercent = clean.match(/(\d+)%\s+([◐◓◑◒○●◌])/);
+  if (friendlyPercent) {
+    const percent = Number(friendlyPercent[1]);
+    setProgressPatch({
+      friendlySeen: true,
+      spinner: friendlyPercent[2],
+      visualPercent: Math.max(syncProgress.visualPercent ?? 0, percent),
+    });
+  }
+
+  const friendlyFooter = clean.match(/([.\dKMGTPEiB\s-]+B\/s)\s+([\d,]+)\/([\d,]+)\s+·\s+([^│\r\n]+)/i);
+  if (friendlyFooter) {
+    const [, speed, doneRaw, totalRaw, eta] = friendlyFooter;
+    setProgressPatch({
+      friendlySeen: true,
+      speed: speed.trim().replace(/\s+/g, " "),
+      downloaded: Number(doneRaw.replace(/,/g, "")),
+      total: Number(totalRaw.replace(/,/g, "")),
+      eta: eta.trim(),
+    });
+  }
+
+  const progressMatches = [...clean.matchAll(/\[(\d{2}:\d{2}:\d{2})\]\s+\[[^\]]+\]\s+([\d,]+)\/([\d,]+)\s+\(([^)]*)\)\s+([^\r\n]*?)(?=\s+\d{4}-\d{2}-\d{2}T|\s+\^C\d{4}-\d{2}-\d{2}T|$)/g)];
+  const progressMatch = progressMatches.at(-1);
+  if (progressMatch) {
+    const [, elapsed, doneRaw, totalRaw, eta, filenameRaw] = progressMatch;
+    const done = Number(doneRaw.replace(/,/g, ""));
+    const total = Number(totalRaw.replace(/,/g, ""));
+    const filename = filenameRaw.trim();
+    setProgressPatch({
+      title: "Verifying files",
+      detail: filename ? `${filename} · ${eta} remaining` : `${elapsed} elapsed · ${eta} remaining`,
+      downloaded: done,
+      failed: syncProgress.failed,
+      total,
+    });
+  }
+
   const parsed = parseLine(raw);
   const msg = parsed.message ?? parsed.text ?? clean;
 
@@ -665,8 +859,17 @@ function setSyncRunning(running) {
   badge.textContent = running ? "Running" : "Idle";
   badge.className = `badge ${running ? "running" : ""}`;
   progressWrap.classList.toggle("hidden", !running);
-  if (running) _startThumbPolling();
-  else { _stopThumbPolling(); loadRecentThumbnails(); }
+  if (running) {
+    if (!syncProgress) resetSyncProgress();
+    _startThumbPolling();
+    startSyncProgressPolling();
+    startSyncProgressAnimation();
+  } else {
+    _stopThumbPolling();
+    stopSyncProgressPolling();
+    stopSyncProgressAnimation();
+    loadRecentThumbnails();
+  }
 }
 
 // Register Tauri event listeners once.
@@ -687,7 +890,7 @@ listen("sync-output-batch", (event) => {
 });
 listen("sync-2fa-required", () => show2FAModal());
 listen("sync-completed", () => {
-  setProgressPatch({ title: "Sync complete", detail: "Finished syncing" });
+  setProgressPatch({ title: "Sync complete", detail: "Finished syncing", visualPercent: 100 });
   setSyncRunning(false);
   appendLog("── Sync completed ──", "success");
   appendGlobalLog("── Sync completed ──");
