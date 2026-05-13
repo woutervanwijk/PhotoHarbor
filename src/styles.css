@@ -712,7 +712,7 @@ html, body {
 /* Compact single-entry status view */
 #sync-log-compact {
   padding: 2px 0;
-  height: 45px;
+  height: 80px;
   display: flex;
   align-items: center;
   overflow: hidden;
