@@ -495,7 +495,7 @@ html, body {
 }
 
 #progress-bar-wrap {
-  margin-bottom: 16px;
+  padding: 12px 14px 0;
 }
 
 .progress-lifecycle {
@@ -620,21 +620,29 @@ html, body {
 }
 
 .thumbnails-list {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(2, 112px);
+  grid-auto-columns: 112px;
   gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 8px;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
 }
 
 .thumb-item {
   position: relative;
-  width: 152px;
-  height: 152px;
+  width: 112px;
+  height: 112px;
   border-radius: var(--radius-sm);
   overflow: hidden;
   background: var(--card-border);
-  flex-shrink: 0;
   border: 1px solid var(--card-border);
   cursor: pointer;
+  scroll-snap-align: start;
+  isolation: isolate;
 }
 
 .thumb-item img,
@@ -643,6 +651,26 @@ html, body {
   height: 100%;
   object-fit: cover;
   display: block;
+  position: relative;
+  z-index: 1;
+}
+
+.thumb-item--video video {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  transform: translateZ(0);
+}
+
+.thumb-video-poster {
+  position: absolute !important;
+  inset: 0;
+  z-index: 1 !important;
+  pointer-events: none;
+}
+
+.thumb-item--previewing .thumb-video-poster {
+  opacity: 0;
 }
 
 .thumb-item--new {
@@ -653,10 +681,16 @@ html, body {
   position: absolute;
   bottom: 8px;
   right: 8px;
-  width: 28px;
-  height: 28px;
-  background: rgba(0, 0, 0, 0.55);
+  width: 30px;
+  height: 30px;
+  background: rgba(0, 0, 0, 0.72);
   border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  z-index: 10;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.48);
+  transform: translateZ(1px);
+  will-change: transform;
 }
 
 .thumb-video-badge::after {
@@ -723,7 +757,7 @@ html, body {
   box-shadow: 0 32px 80px rgba(0, 0, 0, 0.6);
 }
 
-.log-card { padding: 0; }
+.log-card { padding: 0; margin-bottom: 16px; }
 
 
 /* Compact single-entry status view */
@@ -733,6 +767,7 @@ html, body {
   display: flex;
   align-items: center;
   overflow: hidden;
+  border-top: 1px solid var(--card-border);
 }
 
 #sync-log-compact .log-entry {
@@ -762,7 +797,7 @@ html, body {
 }
 
 /* Expand / collapse toggle button */
-#log-expand-btn {
+.log-expand-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -777,7 +812,7 @@ html, body {
   transition: background 0.12s, color 0.12s;
 }
 
-#log-expand-btn:hover {
+.log-expand-btn:hover {
   background: var(--btn-ghost-hover);
   color: var(--text-secondary);
 }
@@ -793,7 +828,7 @@ html, body {
   transition: transform 0.2s;
 }
 
-#log-expand-btn.expanded .log-expand-chevron {
+.log-expand-btn.expanded .log-expand-chevron {
   transform: rotate(-135deg) translate(-1px, -1px);
 }
 

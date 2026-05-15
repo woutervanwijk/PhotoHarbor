@@ -122,8 +122,10 @@ const _thumbsEl = document.getElementById("recent-thumbnails");
 const _thumbsListEl = document.getElementById("thumbnails-list");
 let _thumbPollInterval = null;
 let _shownThumbPaths = new Set();
+let _shownThumbSignature = "";
 let _thumbDirectory = null;
 let _thumbLoadGeneration = 0;
+let _videoThumbObserver = null;
 
 function recentClearStorageKey(directory) {
   return `kei-photosync:recent-cleared-before:${directory}`;
@@ -133,6 +135,29 @@ function getRecentClearCutoff(directory) {
   const value = localStorage.getItem(recentClearStorageKey(directory));
   const cutoff = value ? Number.parseInt(value, 10) : null;
   return Number.isFinite(cutoff) ? cutoff : null;
+}
+
+function disconnectVideoThumbObserver() {
+  if (!_videoThumbObserver) return;
+  _videoThumbObserver.disconnect();
+  _videoThumbObserver = null;
+}
+
+function getVideoThumbObserver() {
+  if (!("IntersectionObserver" in window) || !_thumbsListEl) return null;
+  if (!_videoThumbObserver) {
+    _videoThumbObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        entry.target._loadVideoThumb?.();
+        _videoThumbObserver?.unobserve(entry.target);
+      }
+    }, {
+      root: _thumbsListEl,
+      rootMargin: "160px",
+    });
+  }
+  return _videoThumbObserver;
 }
 
 document.getElementById("open-folder-btn").addEventListener("click", () => {
@@ -186,9 +211,11 @@ function clearRecentThumbnails(persistCutoff = false, directoryOverride = null) 
     );
   }
   closeLightbox();
+  disconnectVideoThumbObserver();
   _thumbsListEl.innerHTML = "";
   _thumbsEl.classList.add("hidden");
   _shownThumbPaths = new Set();
+  _shownThumbSignature = "";
   _lightboxAssets = [];
 }
 
@@ -229,8 +256,14 @@ async function loadRecentThumbnails() {
     if (generation !== _thumbLoadGeneration) return;
     if (!assets || assets.length === 0) { _thumbsEl.classList.add("hidden"); return; }
 
-    _thumbsListEl.innerHTML = "";
     const newPaths = new Set(assets.map((a) => a.path));
+    const newSignature = assets.map((a) => a.path).join("\n");
+    if (newSignature === _shownThumbSignature && !_thumbsEl.classList.contains("hidden")) {
+      return;
+    }
+
+    disconnectVideoThumbObserver();
+    _thumbsListEl.innerHTML = "";
     const currentLightboxPath = _lightboxIndex >= 0 ? _lightboxAssets[_lightboxIndex]?.path : null;
     _lightboxAssets = assets.map((asset) => ({
       path: asset.path,
@@ -250,19 +283,43 @@ async function loadRecentThumbnails() {
       item.role = "button";
       const lightboxAsset = _lightboxAssets[index];
       const src = lightboxAsset.src;
+      const thumbSrc = asset.thumbnail_path ? convertFileSrc(asset.thumbnail_path) : src;
 
       if (asset.is_video) {
+        item.classList.add("thumb-item--video");
+        item.setAttribute("aria-label", "Open video preview");
+        if (asset.thumbnail_path) {
+          const posterImg = document.createElement("img");
+          posterImg.className = "thumb-video-poster";
+          posterImg.src = thumbSrc;
+          posterImg.alt = "";
+          posterImg.decoding = "async";
+          posterImg.onerror = () => posterImg.remove();
+          item.appendChild(posterImg);
+        }
         const video = document.createElement("video");
         video.muted = true;
         video.playsInline = true;
-        video.preload = "auto";
-        video.src = src;
+        video.preload = "metadata";
+        if (asset.thumbnail_path) video.poster = thumbSrc;
         video.onerror = () => item.remove();
+        let videoLoaded = false;
         let previewTime = 0;
         let previewActive = false;
+        const loadVideoThumb = () => {
+          if (videoLoaded) return;
+          videoLoaded = true;
+          video.src = src;
+          video.load();
+        };
+        if (!asset.thumbnail_path) item._loadVideoThumb = loadVideoThumb;
         video.addEventListener("loadedmetadata", () => {
           previewTime = Math.min(1, (video.duration || 10) * 0.1);
-          video.currentTime = previewTime;
+          try {
+            video.currentTime = previewTime;
+          } catch {
+            // Some codecs do not allow early seeking before enough data is available.
+          }
         }, { once: true });
         video.addEventListener("seeked", () => {
           if (!previewActive) {
@@ -271,13 +328,18 @@ async function loadRecentThumbnails() {
             }).catch(() => {});
           }
         }, { once: true });
+        video.addEventListener("playing", () => {
+          item.classList.add("thumb-item--previewing");
+        });
         const playPreview = () => {
           previewActive = true;
+          loadVideoThumb();
           video.play().catch(() => {});
         };
         const pausePreview = () => {
           previewActive = false;
           video.pause();
+          item.classList.remove("thumb-item--previewing");
           if (Number.isFinite(video.duration) && video.readyState > 0) {
             video.currentTime = previewTime;
           }
@@ -290,11 +352,14 @@ async function loadRecentThumbnails() {
         const badge = document.createElement("div");
         badge.className = "thumb-video-badge";
         item.appendChild(badge);
+        const observer = getVideoThumbObserver();
+        if (observer && !asset.thumbnail_path) observer.observe(item);
       } else {
         const img = document.createElement("img");
-        img.src = src;
+        img.src = thumbSrc;
         img.alt = "";
         img.loading = "lazy";
+        img.decoding = "async";
         img.onerror = () => item.remove();
         item.appendChild(img);
       }
@@ -310,7 +375,15 @@ async function loadRecentThumbnails() {
     }
 
     _shownThumbPaths = newPaths;
+    _shownThumbSignature = newSignature;
     _thumbsEl.classList.remove("hidden");
+    requestAnimationFrame(() => {
+      const visibleColumns = Math.ceil((_thumbsListEl.clientWidth || 560) / 120);
+      const visibleItems = Math.max(8, visibleColumns * 2);
+      for (const item of Array.from(_thumbsListEl.children).slice(0, visibleItems)) {
+        item._loadVideoThumb?.();
+      }
+    });
   } catch {
     _thumbsEl.classList.add("hidden");
   }
@@ -318,7 +391,7 @@ async function loadRecentThumbnails() {
 
 function _startThumbPolling() {
   if (_thumbPollInterval) return;
-  _thumbPollInterval = setInterval(loadRecentThumbnails, 5000);
+  _thumbPollInterval = setInterval(loadRecentThumbnails, 10000);
 }
 
 function _stopThumbPolling() {
@@ -335,7 +408,9 @@ const logExpandBtn = document.getElementById("log-expand-btn");
 const startBtn = document.getElementById("sync-start-btn");
 const stopBtn = document.getElementById("sync-stop-btn");
 const badge = document.getElementById("sync-status-badge");
+const syncOutputCard = document.getElementById("sync-output-card");
 const progressWrap = document.getElementById("progress-bar-wrap");
+const progressExpandBtn = document.getElementById("progress-expand-btn");
 const progressInner = document.getElementById("progress-bar-inner");
 const progressPercent = document.getElementById("sync-progress-percent");
 const progressDetail = document.getElementById("sync-progress-detail");
@@ -343,17 +418,22 @@ const progressSpeed = document.getElementById("sync-progress-speed");
 const progressTotal = document.getElementById("sync-progress-total");
 const progressLifecycle = document.getElementById("sync-progress-lifecycle");
 
-let logExpanded = false;
+let outputExpanded = 0;
 
-function setLogExpanded(expanded) {
-  logExpanded = expanded;
-  syncLogCompact.classList.toggle("hidden", expanded);
-  syncLog.classList.toggle("hidden", !expanded);
-  logExpandBtn.classList.toggle("expanded", expanded);
-  if (expanded) syncLog.scrollTop = syncLog.scrollHeight;
+function setOutputExpanded(level) {
+  outputExpanded = Math.max(0, Math.min(2, level));
+  const showCompact = outputExpanded === 1;
+  const showFull = outputExpanded === 2;
+  syncLogCompact.classList.toggle("hidden", !showCompact);
+  syncLog.classList.toggle("hidden", !showFull);
+  logExpandBtn.classList.toggle("hidden", outputExpanded === 0);
+  progressExpandBtn.classList.toggle("expanded", outputExpanded > 0);
+  logExpandBtn.classList.toggle("expanded", showFull);
+  if (showFull) syncLog.scrollTop = syncLog.scrollHeight;
 }
 
-logExpandBtn.addEventListener("click", () => setLogExpanded(!logExpanded));
+progressExpandBtn.addEventListener("click", () => setOutputExpanded(outputExpanded > 0 ? 0 : 1));
+logExpandBtn.addEventListener("click", () => setOutputExpanded(outputExpanded === 2 ? 1 : 2));
 
 // ---------------------------------------------------------------------------
 // Global log panel
@@ -391,6 +471,11 @@ function clearLogs() {
   logUnread = false;
   logBadge.classList.remove("visible");
   resetSyncDedup();
+  setOutputExpanded(0);
+  if (!syncRunning) {
+    syncProgress = null;
+    syncOutputCard.classList.add("hidden");
+  }
 }
 
 // Drag-to-resize handle
@@ -858,7 +943,7 @@ function setSyncRunning(running) {
   stopBtn.disabled = !running;
   badge.textContent = running ? "Running" : "Idle";
   badge.className = `badge ${running ? "running" : ""}`;
-  progressWrap.classList.toggle("hidden", !running);
+  syncOutputCard.classList.toggle("hidden", !running && !syncProgress);
   if (running) {
     if (!syncProgress) resetSyncProgress();
     _startThumbPolling();

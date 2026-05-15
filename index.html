@@ -80,31 +80,41 @@
           <button type="button" class="btn-destructive" id="sync-stop-btn" disabled>Stop</button>
           <span id="sync-status-badge" class="badge">Idle</span>
         </div>
+        <div id="sync-output-card" class="section-card log-card hidden">
+          <div id="progress-bar-wrap">
+            <div id="sync-progress-lifecycle" class="progress-lifecycle"></div>
+            <div class="friendly-progress-card">
+              <div class="friendly-progress-title">
+                <span>kei · downloading from iCloud</span>
+              </div>
+              <div class="friendly-progress-body">
+                <div id="sync-progress-detail" class="friendly-progress-detail">Starting kei</div>
+                <div class="friendly-progress-track">
+                  <div id="progress-bar-inner"></div>
+                </div>
+                <div class="friendly-progress-footer">
+                  <span id="sync-progress-speed">-- B/s</span>
+                  <span id="sync-progress-total">0/0 · calculating...</span>
+                  <span id="sync-progress-percent">0% ◓</span>
+                </div>
+              </div>
+            </div>
+            <button type="button" class="log-expand-btn" id="progress-expand-btn" title="Toggle compact log">
+              <span class="log-expand-chevron"></span>
+            </button>
+          </div>
+          <div id="sync-log-compact" class="hidden"><span class="log-compact-placeholder">—</span></div>
+          <div id="sync-log" class="hidden"></div>
+          <button type="button" class="log-expand-btn hidden" id="log-expand-btn" title="Toggle full log">
+            <span class="log-expand-chevron"></span>
+          </button>
+        </div>
         <div id="recent-thumbnails" class="recent-thumbnails hidden">
           <div class="thumbs-header">
             <span class="thumbs-label">Recently synced</span>
             <button type="button" class="btn-ghost btn-sm" id="open-folder-btn">Open folder ↗</button>
           </div>
           <div id="thumbnails-list" class="thumbnails-list"></div>
-        </div>
-        <div id="progress-bar-wrap" class="hidden">
-          <div id="sync-progress-lifecycle" class="progress-lifecycle"></div>
-          <div class="friendly-progress-card">
-            <div class="friendly-progress-title">
-              <span>kei · downloading from iCloud</span>
-            </div>
-            <div class="friendly-progress-body">
-              <div id="sync-progress-detail" class="friendly-progress-detail">Starting kei</div>
-              <div class="friendly-progress-track">
-                <div id="progress-bar-inner"></div>
-              </div>
-              <div class="friendly-progress-footer">
-                <span id="sync-progress-speed">-- B/s</span>
-                <span id="sync-progress-total">0/0 · calculating...</span>
-                <span id="sync-progress-percent">0% ◓</span>
-              </div>
-            </div>
-          </div>
         </div>
         <div id="adp-warning" class="notice notice--warn hidden">
           <strong>Advanced Data Protection detected.</strong>
@@ -114,13 +124,6 @@
             <li>Enable <strong>Access iCloud Data on the Web</strong> in the same menu.</li>
           </ol>
           <button type="button" class="notice-dismiss" id="adp-dismiss-btn">Dismiss</button>
-        </div>
-        <div class="section-card log-card">
-          <div id="sync-log-compact"><span class="log-compact-placeholder">—</span></div>
-          <div id="sync-log" class="hidden"></div>
-          <button type="button" id="log-expand-btn" title="Toggle full log">
-            <span class="log-expand-chevron"></span>
-          </button>
         </div>
         <div class="section-card last-sync-card">
           <h2>Last Sync</h2>

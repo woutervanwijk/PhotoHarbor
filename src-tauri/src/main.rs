@@ -1043,13 +1043,14 @@ async fn clear_kei_session() -> Result<(), String> {
 }
 
 // ---------------------------------------------------------------------------
-// Recent downloads — walks the download dir and returns the 5 newest media files
+// Recent downloads — walks the download dir and returns the 100 newest media files
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Serialize)]
 pub struct RecentAsset {
     pub path: String,
     pub is_video: bool,
+    pub thumbnail_path: Option<String>,
 }
 
 fn expand_tilde(path: &str) -> String {
@@ -1065,7 +1066,7 @@ fn expand_tilde(path: &str) -> String {
 
 fn collect_media_files(
     root: &std::path::Path,
-) -> Vec<(std::time::SystemTime, std::path::PathBuf, bool)> {
+) -> Vec<(std::time::SystemTime, std::path::PathBuf, bool, u64)> {
     let mut files = Vec::new();
     let mut dirs = vec![root.to_path_buf()];
     while let Some(dir) = dirs.pop() {
@@ -1118,13 +1119,156 @@ fn collect_media_files(
                             | "bmp"
                     );
                     if is_video || is_image {
-                        files.push((ts, path, is_video));
+                        files.push((ts, path, is_video, meta.len()));
                     }
                 }
             }
         }
     }
     files
+}
+
+fn stable_thumb_key(path: &std::path::Path, ts: std::time::SystemTime, len: u64) -> String {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in path.to_string_lossy().as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    let secs = ts
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default();
+    for byte in secs.to_le_bytes().iter().chain(len.to_le_bytes().iter()) {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
+}
+
+fn thumbnail_cache_dir() -> Option<std::path::PathBuf> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()?;
+    #[cfg(target_os = "macos")]
+    {
+        Some(
+            std::path::PathBuf::from(home)
+                .join("Library")
+                .join("Caches")
+                .join("Kei PhotoSync")
+                .join("thumbnails"),
+        )
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Some(
+            std::path::PathBuf::from(home)
+                .join(".cache")
+                .join("kei-photosync")
+                .join("thumbnails"),
+        )
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn create_image_thumbnail(source: &std::path::Path, target: &std::path::Path) -> bool {
+    std::process::Command::new("sips")
+        .arg("-s")
+        .arg("format")
+        .arg("jpeg")
+        .arg("-Z")
+        .arg("240")
+        .arg(source)
+        .arg("--out")
+        .arg(target)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|status| status.success() && target.exists())
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "macos")]
+fn create_video_thumbnail(source: &std::path::Path, target: &std::path::Path) -> bool {
+    let Some(parent) = target.parent() else {
+        return false;
+    };
+    let Some(stem) = target.file_stem().and_then(|value| value.to_str()) else {
+        return false;
+    };
+    let temp_dir = parent.join(format!("{stem}.tmp"));
+    let _ = std::fs::remove_dir_all(&temp_dir);
+    if std::fs::create_dir_all(&temp_dir).is_err() {
+        return false;
+    }
+    let status_ok = std::process::Command::new("qlmanage")
+        .arg("-t")
+        .arg("-s")
+        .arg("240")
+        .arg("-o")
+        .arg(&temp_dir)
+        .arg(source)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false);
+    if !status_ok {
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        return false;
+    }
+
+    let generated = std::fs::read_dir(&temp_dir).ok().and_then(|entries| {
+        entries
+            .flatten()
+            .map(|entry| entry.path())
+            .find(|path| path.is_file())
+    });
+    let success = generated
+        .as_deref()
+        .map(|path| {
+            std::fs::rename(path, target)
+                .or_else(|_| std::fs::copy(path, target).map(|_| ()))
+                .is_ok()
+                && target.exists()
+        })
+        .unwrap_or(false);
+    let _ = std::fs::remove_dir_all(&temp_dir);
+    success
+}
+
+fn cached_thumbnail_for(
+    source: &std::path::Path,
+    is_video: bool,
+    ts: std::time::SystemTime,
+    len: u64,
+) -> Option<std::path::PathBuf> {
+    let cache_dir = thumbnail_cache_dir()?;
+    std::fs::create_dir_all(&cache_dir).ok()?;
+    let key = stable_thumb_key(source, ts, len);
+    let target = cache_dir.join(if is_video {
+        format!("{key}.png")
+    } else {
+        format!("{key}.jpg")
+    });
+    if target.exists() {
+        return Some(target);
+    }
+
+    #[cfg(target_os = "macos")]
+    let created = if is_video {
+        create_video_thumbnail(source, &target)
+    } else {
+        create_image_thumbnail(source, &target)
+    };
+    #[cfg(not(target_os = "macos"))]
+    let created = false;
+
+    if created {
+        Some(target)
+    } else {
+        None
+    }
 }
 
 #[tauri::command]
@@ -1137,19 +1281,24 @@ async fn get_recent_downloads(directory: String, newer_than: Option<u64>) -> Vec
         }
         let mut files = collect_media_files(&dir);
         if let Some(cutoff) = newer_than {
-            files.retain(|(ts, _, _)| {
+            files.retain(|(ts, _, _, _)| {
                 ts.duration_since(std::time::UNIX_EPOCH)
                     .map(|duration| duration.as_secs() > cutoff)
                     .unwrap_or(false)
             });
         }
         files.sort_by(|a, b| b.0.cmp(&a.0));
-        files.truncate(12);
+        files.truncate(100);
         files
             .into_iter()
-            .map(|(_, path, is_video)| RecentAsset {
-                path: path.to_string_lossy().to_string(),
-                is_video,
+            .map(|(ts, path, is_video, len)| {
+                let thumbnail_path = cached_thumbnail_for(&path, is_video, ts, len)
+                    .map(|path| path.to_string_lossy().to_string());
+                RecentAsset {
+                    path: path.to_string_lossy().to_string(),
+                    is_video,
+                    thumbnail_path,
+                }
             })
             .collect()
     })
