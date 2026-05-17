@@ -1855,6 +1855,20 @@ async fn open_folder(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn open_containing_folder(path: String) -> Result<(), String> {
+    let expanded = expand_tilde(&path);
+    let path = std::path::PathBuf::from(expanded);
+    let folder = if path.is_dir() {
+        path
+    } else {
+        path.parent()
+            .map(|parent| parent.to_path_buf())
+            .ok_or_else(|| "No containing folder found".to_string())?
+    };
+    open_folder(folder.to_string_lossy().to_string()).await
+}
+
+#[tauri::command]
 async fn open_url(url: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     std::process::Command::new("open")
@@ -1910,6 +1924,7 @@ fn main() {
             list_kei_smart_folders,
             get_recent_downloads,
             open_folder,
+            open_containing_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Kei PhotoSync");

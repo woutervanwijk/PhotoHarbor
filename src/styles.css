@@ -750,6 +750,7 @@ html, body {
   position: absolute;
   top: 18px;
   right: 18px;
+  z-index: 920;
   width: 34px;
   height: 34px;
   border-radius: 50%;
@@ -766,6 +767,48 @@ html, body {
 }
 
 .lightbox-close:hover { background: rgba(255, 255, 255, 0.24); }
+
+.lightbox-folder-btn {
+  position: absolute;
+  top: 18px;
+  right: 62px;
+  z-index: 920;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-app-region: no-drag;
+}
+
+.lightbox-folder-btn:hover { background: rgba(255, 255, 255, 0.24); }
+
+.lightbox-folder-btn::before {
+  content: "";
+  width: 17px;
+  height: 12px;
+  border: 1.8px solid currentColor;
+  border-radius: 2px;
+  transform: translateY(2px);
+}
+
+.lightbox-folder-btn::after {
+  content: "";
+  position: absolute;
+  width: 8px;
+  height: 4px;
+  left: 9px;
+  top: 10px;
+  border: 1.8px solid currentColor;
+  border-bottom: none;
+  border-radius: 2px 2px 0 0;
+}
 
 .lightbox-media {
   position: relative;
