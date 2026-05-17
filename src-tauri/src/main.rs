@@ -132,6 +132,17 @@ fn config_path() -> Result<std::path::PathBuf, String> {
     Ok(kei_config_dir()?.join("config.toml"))
 }
 
+fn write_text_if_changed(path: &std::path::Path, content: &str) -> Result<(), String> {
+    if path.exists() {
+        if let Ok(existing) = std::fs::read_to_string(path) {
+            if existing == content {
+                return Ok(());
+            }
+        }
+    }
+    std::fs::write(path, content).map_err(|e| e.to_string())
+}
+
 /// Locate the SQLite database for a given username.
 /// kei stores databases in ~/.config/kei/cookies/<sanitised_username>.db
 /// where sanitisation strips all non-alphanumeric characters (except '-').
@@ -411,7 +422,7 @@ async fn save_config(mut config: KeiConfig) -> Result<(), String> {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let content = toml::to_string_pretty(&config).map_err(|e| e.to_string())?;
-    std::fs::write(&path, content).map_err(|e| e.to_string())
+    write_text_if_changed(&path, &content)
 }
 
 fn normalize_v013_filters(config: &mut KeiConfig) {
@@ -878,7 +889,7 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
             };
         }
         if let (Ok(path), Ok(content)) = (config_path(), toml::to_string_pretty(&clean)) {
-            let _ = std::fs::write(path, content);
+            let _ = write_text_if_changed(&path, &content);
         }
     }
 
@@ -1684,7 +1695,7 @@ async fn save_app_settings(settings: AppSettings) -> Result<(), String> {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let content = toml::to_string_pretty(&settings).map_err(|e| e.to_string())?;
-    std::fs::write(&path, content).map_err(|e| e.to_string())
+    write_text_if_changed(&path, &content)
 }
 
 // ---------------------------------------------------------------------------

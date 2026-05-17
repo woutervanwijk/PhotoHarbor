@@ -263,6 +263,11 @@ function navigateLightbox(delta) {
 }
 
 document.getElementById("lightbox-close").addEventListener("click", closeLightbox);
+document.getElementById("lightbox-open-folder").addEventListener("click", (e) => {
+  e.stopPropagation();
+  const asset = _lightboxAssets[_lightboxIndex];
+  if (asset?.path) invoke("open_containing_folder", { path: asset.path }).catch(() => {});
+});
 _lightboxOverlay.addEventListener("click", (e) => { if (e.target === _lightboxOverlay) closeLightbox(); });
 _lightboxMedia.addEventListener("pointerenter", playLightboxLivePhoto);
 _lightboxMedia.addEventListener("pointermove", playLightboxLivePhoto);
