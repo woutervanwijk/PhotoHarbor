@@ -12,6 +12,7 @@ import { parseLine, renderEntry, stripAnsi, dedupKey } from "./log-parsers.js";
 const views = document.querySelectorAll(".view");
 const navItems = document.querySelectorAll(".nav-item");
 const toolbarTitle = document.getElementById("toolbar-title");
+let _activeView = "sync";
 
 // Window dragging — use startDragging() on mousedown in drag zones.
 // CSS -webkit-app-region and data-tauri-drag-region are unreliable in Tauri v2.
@@ -23,9 +24,10 @@ document.addEventListener("mousedown", (e) => {
   }
 });
 
-const VIEW_TITLES = { sync: "Sync", history: "History", settings: "Settings" };
+const VIEW_TITLES = { sync: "Sync", browse: "Browse", history: "History", settings: "Settings" };
 
 function showView(name) {
+  _activeView = name;
   views.forEach((v) => v.classList.remove("active"));
   navItems.forEach((n) => n.classList.remove("active"));
   const target = document.getElementById(`view-${name}`);
@@ -35,6 +37,7 @@ function showView(name) {
   toolbarTitle.textContent = VIEW_TITLES[name] ?? "";
 
   if (name === "sync") { loadDashboard(); loadRecentThumbnails(); }
+  if (name === "browse") loadBrowse();
   if (name === "history") loadHistory();
   if (name === "settings") loadSettings();
 }
@@ -289,8 +292,193 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+function toLightboxAssets(assets) {
+  return assets.map((asset) => ({
+    path: asset.path,
+    src: convertFileSrc(asset.path),
+    isVideo: asset.is_video,
+    isLivePhoto: asset.is_live_photo,
+    liveVideoSrc: asset.live_video_path ? convertFileSrc(asset.live_video_path) : null,
+  }));
+}
+
+function mediaAssetSignature(assets) {
+  return assets.map((asset) => `${asset.path}\0${asset.live_video_path ?? ""}\0${asset.thumbnail_path ?? ""}`).join("\n");
+}
+
+function renderMediaThumbnails(container, assets, options = {}) {
+  const {
+    previousPaths = new Set(),
+    animateNew = false,
+    videoObserver = null,
+    primeVisible = false,
+  } = options;
+  container.innerHTML = "";
+  _lightboxAssets = toLightboxAssets(assets);
+
+  for (const [index, asset] of assets.entries()) {
+    const isNew = animateNew && !previousPaths.has(asset.path);
+    const item = document.createElement("div");
+    item.className = "thumb-item" + (isNew ? " thumb-item--new" : "");
+    item.tabIndex = 0;
+    item.role = "button";
+    const lightboxAsset = _lightboxAssets[index];
+    const src = lightboxAsset.src;
+    const thumbSrc = asset.thumbnail_path ? convertFileSrc(asset.thumbnail_path) : src;
+
+    if (asset.is_video) {
+      item.classList.add("thumb-item--video");
+      item.setAttribute("aria-label", "Open video preview");
+      if (asset.thumbnail_path) {
+        const posterImg = document.createElement("img");
+        posterImg.className = "thumb-video-poster";
+        posterImg.src = thumbSrc;
+        posterImg.alt = "";
+        posterImg.decoding = "async";
+        posterImg.onerror = () => posterImg.remove();
+        item.appendChild(posterImg);
+      }
+      const video = document.createElement("video");
+      video.muted = true;
+      video.playsInline = true;
+      video.preload = "metadata";
+      if (asset.thumbnail_path) video.poster = thumbSrc;
+      video.onerror = () => item.remove();
+      let videoLoaded = false;
+      let previewTime = 0;
+      let previewActive = false;
+      const loadVideoThumb = () => {
+        if (videoLoaded) return;
+        videoLoaded = true;
+        video.src = src;
+        video.load();
+      };
+      if (!asset.thumbnail_path) item._loadVideoThumb = loadVideoThumb;
+      video.addEventListener("loadedmetadata", () => {
+        previewTime = Math.min(1, (video.duration || 10) * 0.1);
+        try {
+          video.currentTime = previewTime;
+        } catch {
+          // Some codecs do not allow early seeking before enough data is available.
+        }
+      }, { once: true });
+      video.addEventListener("seeked", () => {
+        if (!previewActive) {
+          video.play().then(() => {
+            if (!previewActive) video.pause();
+          }).catch(() => {});
+        }
+      }, { once: true });
+      video.addEventListener("playing", () => {
+        item.classList.add("thumb-item--previewing");
+      });
+      const playPreview = () => {
+        previewActive = true;
+        loadVideoThumb();
+        video.play().catch(() => {});
+      };
+      const pausePreview = () => {
+        previewActive = false;
+        video.pause();
+        item.classList.remove("thumb-item--previewing");
+        if (Number.isFinite(video.duration) && video.readyState > 0) {
+          video.currentTime = previewTime;
+        }
+      };
+      item.addEventListener("pointerenter", playPreview);
+      item.addEventListener("pointermove", playPreview);
+      item.addEventListener("pointerleave", pausePreview);
+      item.addEventListener("focus", playPreview);
+      item.addEventListener("blur", pausePreview);
+      item.appendChild(video);
+      const badge = document.createElement("div");
+      badge.className = "thumb-video-badge";
+      item.appendChild(badge);
+      if (videoObserver && !asset.thumbnail_path) videoObserver.observe(item);
+    } else if (asset.is_live_photo) {
+      item.classList.add("thumb-item--live");
+      item.setAttribute("aria-label", "Open Live Photo preview");
+      const img = document.createElement("img");
+      img.src = thumbSrc;
+      img.alt = "";
+      img.loading = "lazy";
+      img.decoding = "async";
+      img.onerror = () => item.remove();
+      item.appendChild(img);
+
+      if (asset.live_video_path) {
+        const liveVideoSrc = convertFileSrc(asset.live_video_path);
+        const video = document.createElement("video");
+        video.muted = true;
+        video.playsInline = true;
+        video.preload = "metadata";
+        video.onerror = () => video.remove();
+        let videoLoaded = false;
+        const loadLiveVideo = () => {
+          if (videoLoaded) return;
+          videoLoaded = true;
+          video.src = liveVideoSrc;
+          video.load();
+        };
+        const playPreview = () => {
+          loadLiveVideo();
+          video.play().catch(() => {});
+        };
+        const pausePreview = () => {
+          video.pause();
+          item.classList.remove("thumb-item--previewing");
+          if (video.readyState > 0) {
+            try { video.currentTime = 0; } catch {}
+          }
+        };
+        video.addEventListener("playing", () => {
+          item.classList.add("thumb-item--previewing");
+        });
+        item.addEventListener("pointerenter", playPreview);
+        item.addEventListener("pointermove", playPreview);
+        item.addEventListener("pointerleave", pausePreview);
+        item.addEventListener("focus", playPreview);
+        item.addEventListener("blur", pausePreview);
+        item.appendChild(video);
+      }
+
+      const badge = document.createElement("div");
+      badge.className = "thumb-live-badge";
+      item.appendChild(badge);
+    } else {
+      const img = document.createElement("img");
+      img.src = thumbSrc;
+      img.alt = "";
+      img.loading = "lazy";
+      img.decoding = "async";
+      img.onerror = () => item.remove();
+      item.appendChild(img);
+    }
+
+    item.addEventListener("click", () => openLightbox(index));
+    item.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        openLightbox(index);
+      }
+    });
+    container.appendChild(item);
+  }
+
+  if (primeVisible) {
+    requestAnimationFrame(() => {
+      const visibleColumns = Math.ceil((container.clientWidth || 560) / 120);
+      const visibleItems = Math.max(8, visibleColumns * 2);
+      for (const item of Array.from(container.children).slice(0, visibleItems)) {
+        item._loadVideoThumb?.();
+      }
+    });
+  }
+}
+
 
 async function loadRecentThumbnails() {
+  if (_activeView !== "sync") return;
   const generation = _thumbLoadGeneration;
   try {
     const cfg = await invoke("get_config");
@@ -306,185 +494,28 @@ async function loadRecentThumbnails() {
     if (!assets || assets.length === 0) { _thumbsEl.classList.add("hidden"); return; }
 
     const newPaths = new Set(assets.map((a) => a.path));
-    const newSignature = assets.map((a) => `${a.path}\0${a.live_video_path ?? ""}`).join("\n");
+    const newSignature = mediaAssetSignature(assets);
     if (newSignature === _shownThumbSignature && !_thumbsEl.classList.contains("hidden")) {
+      _lightboxAssets = toLightboxAssets(assets);
       return;
     }
 
     disconnectVideoThumbObserver();
-    _thumbsListEl.innerHTML = "";
     const currentLightboxPath = _lightboxIndex >= 0 ? _lightboxAssets[_lightboxIndex]?.path : null;
-    _lightboxAssets = assets.map((asset) => ({
-      path: asset.path,
-      src: convertFileSrc(asset.path),
-      isVideo: asset.is_video,
-      isLivePhoto: asset.is_live_photo,
-      liveVideoSrc: asset.live_video_path ? convertFileSrc(asset.live_video_path) : null,
-    }));
+    renderMediaThumbnails(_thumbsListEl, assets, {
+      previousPaths: _shownThumbPaths,
+      animateNew: true,
+      videoObserver: getVideoThumbObserver(),
+      primeVisible: true,
+    });
     if (currentLightboxPath) {
       _lightboxIndex = _lightboxAssets.findIndex((asset) => asset.path === currentLightboxPath);
       if (_lightboxIndex === -1) closeLightbox();
     }
 
-    for (const [index, asset] of assets.entries()) {
-      const isNew = !_shownThumbPaths.has(asset.path);
-      const item = document.createElement("div");
-      item.className = "thumb-item" + (isNew ? " thumb-item--new" : "");
-      item.tabIndex = 0;
-      item.role = "button";
-      const lightboxAsset = _lightboxAssets[index];
-      const src = lightboxAsset.src;
-      const thumbSrc = asset.thumbnail_path ? convertFileSrc(asset.thumbnail_path) : src;
-
-      if (asset.is_video) {
-        item.classList.add("thumb-item--video");
-        item.setAttribute("aria-label", "Open video preview");
-        if (asset.thumbnail_path) {
-          const posterImg = document.createElement("img");
-          posterImg.className = "thumb-video-poster";
-          posterImg.src = thumbSrc;
-          posterImg.alt = "";
-          posterImg.decoding = "async";
-          posterImg.onerror = () => posterImg.remove();
-          item.appendChild(posterImg);
-        }
-        const video = document.createElement("video");
-        video.muted = true;
-        video.playsInline = true;
-        video.preload = "metadata";
-        if (asset.thumbnail_path) video.poster = thumbSrc;
-        video.onerror = () => item.remove();
-        let videoLoaded = false;
-        let previewTime = 0;
-        let previewActive = false;
-        const loadVideoThumb = () => {
-          if (videoLoaded) return;
-          videoLoaded = true;
-          video.src = src;
-          video.load();
-        };
-        if (!asset.thumbnail_path) item._loadVideoThumb = loadVideoThumb;
-        video.addEventListener("loadedmetadata", () => {
-          previewTime = Math.min(1, (video.duration || 10) * 0.1);
-          try {
-            video.currentTime = previewTime;
-          } catch {
-            // Some codecs do not allow early seeking before enough data is available.
-          }
-        }, { once: true });
-        video.addEventListener("seeked", () => {
-          if (!previewActive) {
-            video.play().then(() => {
-              if (!previewActive) video.pause();
-            }).catch(() => {});
-          }
-        }, { once: true });
-        video.addEventListener("playing", () => {
-          item.classList.add("thumb-item--previewing");
-        });
-        const playPreview = () => {
-          previewActive = true;
-          loadVideoThumb();
-          video.play().catch(() => {});
-        };
-        const pausePreview = () => {
-          previewActive = false;
-          video.pause();
-          item.classList.remove("thumb-item--previewing");
-          if (Number.isFinite(video.duration) && video.readyState > 0) {
-            video.currentTime = previewTime;
-          }
-        };
-        item.addEventListener("pointerenter", playPreview);
-        item.addEventListener("pointerleave", pausePreview);
-        item.addEventListener("focus", playPreview);
-        item.addEventListener("blur", pausePreview);
-        item.appendChild(video);
-        const badge = document.createElement("div");
-        badge.className = "thumb-video-badge";
-        item.appendChild(badge);
-        const observer = getVideoThumbObserver();
-        if (observer && !asset.thumbnail_path) observer.observe(item);
-      } else if (asset.is_live_photo) {
-        item.classList.add("thumb-item--live");
-        item.setAttribute("aria-label", "Open Live Photo preview");
-        const img = document.createElement("img");
-        img.src = thumbSrc;
-        img.alt = "";
-        img.loading = "lazy";
-        img.decoding = "async";
-        img.onerror = () => item.remove();
-        item.appendChild(img);
-
-        if (asset.live_video_path) {
-          const liveVideoSrc = convertFileSrc(asset.live_video_path);
-          const video = document.createElement("video");
-          video.muted = true;
-          video.playsInline = true;
-          video.preload = "metadata";
-          video.onerror = () => video.remove();
-          let videoLoaded = false;
-          const loadLiveVideo = () => {
-            if (videoLoaded) return;
-            videoLoaded = true;
-            video.src = liveVideoSrc;
-            video.load();
-          };
-          const playPreview = () => {
-            loadLiveVideo();
-            video.play().catch(() => {});
-          };
-          const pausePreview = () => {
-            video.pause();
-            item.classList.remove("thumb-item--previewing");
-            if (video.readyState > 0) {
-              try { video.currentTime = 0; } catch {}
-            }
-          };
-          video.addEventListener("playing", () => {
-            item.classList.add("thumb-item--previewing");
-          });
-          item.addEventListener("pointerenter", playPreview);
-          item.addEventListener("pointermove", playPreview);
-          item.addEventListener("pointerleave", pausePreview);
-          item.addEventListener("focus", playPreview);
-          item.addEventListener("blur", pausePreview);
-          item.appendChild(video);
-        }
-
-        const badge = document.createElement("div");
-        badge.className = "thumb-live-badge";
-        item.appendChild(badge);
-      } else {
-        const img = document.createElement("img");
-        img.src = thumbSrc;
-        img.alt = "";
-        img.loading = "lazy";
-        img.decoding = "async";
-        img.onerror = () => item.remove();
-        item.appendChild(img);
-      }
-
-      item.addEventListener("click", () => openLightbox(index));
-      item.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          openLightbox(index);
-        }
-      });
-      _thumbsListEl.appendChild(item);
-    }
-
     _shownThumbPaths = newPaths;
     _shownThumbSignature = newSignature;
     _thumbsEl.classList.remove("hidden");
-    requestAnimationFrame(() => {
-      const visibleColumns = Math.ceil((_thumbsListEl.clientWidth || 560) / 120);
-      const visibleItems = Math.max(8, visibleColumns * 2);
-      for (const item of Array.from(_thumbsListEl.children).slice(0, visibleItems)) {
-        item._loadVideoThumb?.();
-      }
-    });
   } catch {
     _thumbsEl.classList.add("hidden");
   }
@@ -498,6 +529,170 @@ function _startThumbPolling() {
 function _stopThumbPolling() {
   if (_thumbPollInterval) { clearInterval(_thumbPollInterval); _thumbPollInterval = null; }
 }
+
+// ---------------------------------------------------------------------------
+// Browse view
+// ---------------------------------------------------------------------------
+
+const browseNoConfig = document.getElementById("browse-no-config");
+const browseLayout = document.getElementById("browse-layout");
+const browseCurrentPathEl = document.getElementById("browse-current-path");
+const browseFolderListEl = document.getElementById("browse-folder-list");
+const browseThumbsEl = document.getElementById("browse-thumbnails-list");
+const browseMediaLabel = document.getElementById("browse-media-label");
+const browseOpenFolderBtn = document.getElementById("browse-open-folder-btn");
+let _browseCurrentPath = null;
+let _browseLoadGeneration = 0;
+
+function browseFolderMeta(folder) {
+  const parts = [];
+  if (folder.folder_count) parts.push(`${folder.folder_count} folder${folder.folder_count === 1 ? "" : "s"}`);
+  if (folder.media_count) parts.push(`${folder.media_count} item${folder.media_count === 1 ? "" : "s"}`);
+  return parts.join(" · ") || "Empty";
+}
+
+function pathBaseName(path) {
+  return String(path || "")
+    .split(/[\\/]/)
+    .filter(Boolean)
+    .pop() || path || "Photos";
+}
+
+function joinPath(base, segment) {
+  const separator = base.includes("\\") ? "\\" : "/";
+  return `${base.replace(/[\\/]+$/, "")}${separator}${segment}`;
+}
+
+function createBrowseCrumb(label, path) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "browse-crumb";
+  button.title = path;
+
+  const icon = document.createElement("span");
+  icon.className = "folder-icon browse-crumb-icon";
+  icon.setAttribute("aria-hidden", "true");
+  button.appendChild(icon);
+
+  const text = document.createElement("span");
+  text.className = "browse-crumb-text";
+  text.textContent = label;
+  button.appendChild(text);
+
+  button.addEventListener("click", () => loadBrowse(path));
+  return button;
+}
+
+function renderBrowseBreadcrumb(rootPath, currentPath) {
+  browseCurrentPathEl.innerHTML = "";
+  browseCurrentPathEl.title = currentPath || "";
+  if (!rootPath || !currentPath) {
+    browseCurrentPathEl.textContent = "—";
+    return;
+  }
+
+  browseCurrentPathEl.appendChild(createBrowseCrumb(pathBaseName(rootPath), rootPath));
+
+  const relativePath = currentPath.startsWith(rootPath)
+    ? currentPath.slice(rootPath.length).replace(/^[\\/]+/, "")
+    : "";
+  let cumulative = rootPath;
+  const segments = relativePath.split(/[\\/]/).filter(Boolean);
+  for (const segment of segments) {
+    const separator = document.createElement("span");
+    separator.className = "browse-crumb-separator";
+    separator.textContent = "/";
+    browseCurrentPathEl.appendChild(separator);
+
+    cumulative = joinPath(cumulative, segment);
+    const crumbPath = cumulative;
+    browseCurrentPathEl.appendChild(createBrowseCrumb(segment, crumbPath));
+  }
+}
+
+function renderBrowseFolders(folders) {
+  browseFolderListEl.innerHTML = "";
+  if (!folders.length) {
+    const empty = document.createElement("div");
+    empty.className = "browse-empty";
+    empty.textContent = "No subfolders";
+    browseFolderListEl.appendChild(empty);
+    return;
+  }
+
+  for (const folder of folders) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "browse-folder-row";
+    row.innerHTML = `
+      <span class="folder-icon" aria-hidden="true"></span>
+      <span class="browse-folder-text">
+        <span class="browse-folder-name"></span>
+        <span class="browse-folder-meta"></span>
+      </span>
+    `;
+    row.querySelector(".browse-folder-name").textContent = folder.name;
+    row.querySelector(".browse-folder-meta").textContent = browseFolderMeta(folder);
+    row.addEventListener("click", () => loadBrowse(folder.path));
+    browseFolderListEl.appendChild(row);
+  }
+}
+
+function renderBrowseAssets(assets) {
+  browseMediaLabel.textContent = `${assets.length} media item${assets.length === 1 ? "" : "s"}`;
+  if (!assets.length) {
+    browseThumbsEl.innerHTML = '<div class="browse-empty browse-empty--media">No photos or videos in this folder</div>';
+    _lightboxAssets = [];
+    return;
+  }
+  renderMediaThumbnails(browseThumbsEl, assets);
+}
+
+async function loadBrowse(folder = _browseCurrentPath) {
+  const generation = ++_browseLoadGeneration;
+  const hadVisibleLayout = !browseLayout.classList.contains("hidden");
+  browseNoConfig.classList.add("hidden");
+  if (hadVisibleLayout) {
+    browseMediaLabel.textContent = "Loading";
+    browseThumbsEl.innerHTML = '<div class="browse-empty browse-empty--media">Loading folder...</div>';
+  } else {
+    browseLayout.classList.add("hidden");
+  }
+  try {
+    const cfg = await invoke("get_config");
+    const directory = cfg.download?.directory;
+    if (!directory) {
+      browseNoConfig.innerHTML = '<p>No download directory is configured. Set one in <strong>Settings</strong> before browsing photos.</p>';
+      browseNoConfig.classList.remove("hidden");
+      return;
+    }
+
+    const result = await invoke("browse_photos", { directory, folder });
+    if (generation !== _browseLoadGeneration) return;
+    _browseCurrentPath = result.current_path;
+    renderBrowseBreadcrumb(result.root_path, result.current_path);
+    renderBrowseFolders(result.folders || []);
+    renderBrowseAssets(result.assets || []);
+    browseLayout.classList.remove("hidden");
+  } catch (err) {
+    const messageText = String(err || "Could not browse photos");
+    if (hadVisibleLayout) {
+      browseThumbsEl.innerHTML = "";
+      const empty = document.createElement("div");
+      empty.className = "browse-empty browse-empty--media";
+      empty.textContent = messageText;
+      browseThumbsEl.appendChild(empty);
+      browseLayout.classList.remove("hidden");
+    } else {
+      browseNoConfig.classList.remove("hidden");
+      browseNoConfig.textContent = messageText;
+    }
+  }
+}
+
+browseOpenFolderBtn.addEventListener("click", () => {
+  if (_browseCurrentPath) invoke("open_folder", { path: _browseCurrentPath }).catch(() => {});
+});
 
 // ---------------------------------------------------------------------------
 // Sync view

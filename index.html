@@ -19,6 +19,9 @@
         <li class="nav-item active" data-view="sync">
           <span class="nav-icon nav-icon--sync"></span>Sync
         </li>
+        <li class="nav-item" data-view="browse">
+          <span class="nav-icon folder-icon nav-folder-icon"></span>Browse
+        </li>
         <li class="nav-item" data-view="history">
           <span class="nav-icon nav-icon--history"></span>History
         </li>
@@ -169,6 +172,31 @@
             <div class="stat-value" id="stat-total">—</div>
             <div class="stat-label">Total Assets</div>
           </div>
+        </div>
+      </section>
+
+      <!-- ── Browse ───────────────────────────────────────────────── -->
+      <section id="view-browse" class="view">
+        <div id="browse-no-config" class="notice hidden">
+          <p>No download directory is configured. Set one in <strong>Settings</strong> before browsing photos.</p>
+        </div>
+        <div id="browse-layout" class="browse-layout hidden">
+          <aside class="browse-sidebar">
+            <div class="browse-sidebar-header">
+              <div class="browse-path-block">
+                <div class="thumbs-label">Folder</div>
+                <div id="browse-current-path" class="browse-current-path" aria-label="Current folder">—</div>
+              </div>
+            </div>
+            <div id="browse-folder-list" class="browse-folder-list"></div>
+          </aside>
+          <section class="browse-main" aria-label="Photos in selected folder">
+            <div class="thumbs-header">
+              <span class="thumbs-label" id="browse-media-label">Photos and videos</span>
+              <button type="button" class="btn-ghost btn-sm" id="browse-open-folder-btn">Open folder ↗</button>
+            </div>
+            <div id="browse-thumbnails-list" class="browse-thumbnails-grid"></div>
+          </section>
         </div>
       </section>
 

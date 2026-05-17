@@ -1304,6 +1304,23 @@ pub struct RecentAsset {
     pub thumbnail_path: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct BrowseFolderEntry {
+    pub name: String,
+    pub path: String,
+    pub folder_count: usize,
+    pub media_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BrowsePhotosResult {
+    pub root_path: String,
+    pub current_path: String,
+    pub parent_path: Option<String>,
+    pub folders: Vec<BrowseFolderEntry>,
+    pub assets: Vec<RecentAsset>,
+}
+
 #[derive(Debug, Clone)]
 struct MediaFile {
     ts: std::time::SystemTime,
@@ -1323,6 +1340,51 @@ fn expand_tilde(path: &str) -> String {
     }
 }
 
+fn media_file_from_path(path: std::path::PathBuf, meta: std::fs::Metadata) -> Option<MediaFile> {
+    if !meta.is_file() {
+        return None;
+    }
+
+    // ctime (inode-change time) is the right key: the OS refreshes it
+    // whenever utimes() is called, so it reflects the actual download
+    // time even when kei backdates mtime/birthtime to the EXIF date.
+    // Windows has no meaningful ctime, so fall back to created()/modified().
+    #[cfg(unix)]
+    let ts_opt: Option<std::time::SystemTime> = {
+        use std::os::unix::fs::MetadataExt;
+        let secs = meta.ctime();
+        if secs >= 0 {
+            Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs as u64))
+        } else {
+            None
+        }
+    };
+    #[cfg(not(unix))]
+    let ts_opt: Option<std::time::SystemTime> = meta.created().or_else(|_| meta.modified()).ok();
+
+    let ts = ts_opt?;
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let is_video = matches!(ext.as_str(), "mp4" | "mov" | "m4v" | "avi" | "mkv" | "wmv");
+    let is_image = matches!(
+        ext.as_str(),
+        "jpg" | "jpeg" | "png" | "heic" | "heif" | "gif" | "webp" | "tiff" | "tif" | "bmp"
+    );
+    if is_video || is_image {
+        Some(MediaFile {
+            ts,
+            path,
+            is_video,
+            len: meta.len(),
+        })
+    } else {
+        None
+    }
+}
+
 fn collect_media_files(root: &std::path::Path) -> Vec<MediaFile> {
     let mut files = Vec::new();
     let mut dirs = vec![root.to_path_buf()];
@@ -1335,59 +1397,45 @@ fn collect_media_files(root: &std::path::Path) -> Vec<MediaFile> {
             let Ok(meta) = entry.metadata() else { continue };
             if meta.is_dir() {
                 dirs.push(path);
-            } else {
-                // ctime (inode-change time) is the right key: the OS refreshes it
-                // whenever utimes() is called, so it reflects the actual download
-                // time even when kei backdates mtime/birthtime to the EXIF date.
-                // Windows has no meaningful ctime, so fall back to created()/modified().
-                #[cfg(unix)]
-                let ts_opt: Option<std::time::SystemTime> = {
-                    use std::os::unix::fs::MetadataExt;
-                    let secs = meta.ctime();
-                    if secs >= 0 {
-                        Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs as u64))
-                    } else {
-                        None
-                    }
-                };
-                #[cfg(not(unix))]
-                let ts_opt: Option<std::time::SystemTime> =
-                    meta.created().or_else(|_| meta.modified()).ok();
-
-                if let Some(ts) = ts_opt {
-                    let ext = path
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .unwrap_or("")
-                        .to_lowercase();
-                    let is_video =
-                        matches!(ext.as_str(), "mp4" | "mov" | "m4v" | "avi" | "mkv" | "wmv");
-                    let is_image = matches!(
-                        ext.as_str(),
-                        "jpg"
-                            | "jpeg"
-                            | "png"
-                            | "heic"
-                            | "heif"
-                            | "gif"
-                            | "webp"
-                            | "tiff"
-                            | "tif"
-                            | "bmp"
-                    );
-                    if is_video || is_image {
-                        files.push(MediaFile {
-                            ts,
-                            path,
-                            is_video,
-                            len: meta.len(),
-                        });
-                    }
-                }
+            } else if let Some(file) = media_file_from_path(path, meta) {
+                files.push(file);
             }
         }
     }
     files
+}
+
+fn collect_direct_media_files(root: &std::path::Path) -> Vec<MediaFile> {
+    let Ok(rd) = std::fs::read_dir(root) else {
+        return Vec::new();
+    };
+    rd.flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let meta = entry.metadata().ok()?;
+            media_file_from_path(path, meta)
+        })
+        .collect()
+}
+
+fn count_direct_children(root: &std::path::Path) -> (usize, usize) {
+    let Ok(rd) = std::fs::read_dir(root) else {
+        return (0, 0);
+    };
+    let mut folders = 0usize;
+    let mut media = 0usize;
+    for entry in rd.flatten() {
+        let path = entry.path();
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if meta.is_dir() {
+            folders += 1;
+        } else if media_file_from_path(path, meta).is_some() {
+            media += 1;
+        }
+    }
+    (folders, media)
 }
 
 fn live_photo_pair_key(path: &std::path::Path, is_video: bool) -> Option<String> {
@@ -1448,6 +1496,42 @@ fn collapse_live_photos(files: Vec<MediaFile>) -> Vec<(MediaFile, Option<MediaFi
         collapsed.push((file, None));
     }
     collapsed
+}
+
+fn cached_thumbnail_path(
+    source: &std::path::Path,
+    is_video: bool,
+    ts: std::time::SystemTime,
+    len: u64,
+) -> Option<std::path::PathBuf> {
+    let cache_dir = thumbnail_cache_dir()?;
+    let key = stable_thumb_key(source, ts, len);
+    let target = cache_dir.join(if is_video {
+        format!("{key}.png")
+    } else {
+        format!("{key}.jpg")
+    });
+    target.exists().then_some(target)
+}
+
+fn recent_asset_from_pair(
+    file: MediaFile,
+    live_video: Option<MediaFile>,
+    create_thumbnail: bool,
+) -> RecentAsset {
+    let thumbnail_path = if create_thumbnail {
+        cached_thumbnail_for(&file.path, file.is_video, file.ts, file.len)
+    } else {
+        cached_thumbnail_path(&file.path, file.is_video, file.ts, file.len)
+    }
+    .map(|path| path.to_string_lossy().to_string());
+    RecentAsset {
+        path: file.path.to_string_lossy().to_string(),
+        is_video: file.is_video,
+        is_live_photo: live_video.is_some(),
+        live_video_path: live_video.map(|video| video.path.to_string_lossy().to_string()),
+        thumbnail_path,
+    }
 }
 
 fn stable_thumb_key(path: &std::path::Path, ts: std::time::SystemTime, len: u64) -> String {
@@ -1627,23 +1711,105 @@ async fn get_recent_downloads(directory: String, newer_than: Option<u64>) -> Vec
         collapsed.truncate(100);
         collapsed
             .into_iter()
-            .map(|(file, live_video)| {
-                let thumbnail_path =
-                    cached_thumbnail_for(&file.path, file.is_video, file.ts, file.len)
-                        .map(|path| path.to_string_lossy().to_string());
-                RecentAsset {
-                    path: file.path.to_string_lossy().to_string(),
-                    is_video: file.is_video,
-                    is_live_photo: live_video.is_some(),
-                    live_video_path: live_video
-                        .map(|video| video.path.to_string_lossy().to_string()),
-                    thumbnail_path,
-                }
-            })
+            .map(|(file, live_video)| recent_asset_from_pair(file, live_video, true))
             .collect()
     })
     .await
     .unwrap_or_default()
+}
+
+#[tauri::command]
+async fn browse_photos(
+    directory: String,
+    folder: Option<String>,
+) -> Result<BrowsePhotosResult, String> {
+    let root = std::path::PathBuf::from(expand_tilde(&directory));
+    let current = folder
+        .as_deref()
+        .map(expand_tilde)
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| root.clone());
+
+    tokio::task::spawn_blocking(move || {
+        let root = root
+            .canonicalize()
+            .map_err(|e| format!("Could not open download directory: {e}"))?;
+        let current = current
+            .canonicalize()
+            .map_err(|e| format!("Could not open folder: {e}"))?;
+        if !current.starts_with(&root) {
+            return Err("Folder is outside the download directory".to_string());
+        }
+        if !current.is_dir() {
+            return Err("Selected path is not a folder".to_string());
+        }
+
+        let mut folders = Vec::new();
+        let rd = std::fs::read_dir(&current).map_err(|e| e.to_string())?;
+        for entry in rd.flatten() {
+            let path = entry.path();
+            let Ok(meta) = entry.metadata() else {
+                continue;
+            };
+            if !meta.is_dir() {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or("")
+                .to_string();
+            if name.is_empty() || name.starts_with('.') {
+                continue;
+            }
+            let (folder_count, media_count) = count_direct_children(&path);
+            folders.push(BrowseFolderEntry {
+                name,
+                path: path.to_string_lossy().to_string(),
+                folder_count,
+                media_count,
+            });
+        }
+        folders.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+        let mut collapsed = collapse_live_photos(collect_direct_media_files(&current));
+        collapsed.sort_by(|a, b| {
+            let a_name =
+                a.0.path
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+            let b_name =
+                b.0.path
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+            a_name.cmp(&b_name)
+        });
+        let assets = collapsed
+            .into_iter()
+            .map(|(file, live_video)| recent_asset_from_pair(file, live_video, false))
+            .collect();
+        let parent_path = current.parent().and_then(|parent| {
+            if current == root || !parent.starts_with(&root) {
+                None
+            } else {
+                Some(parent.to_string_lossy().to_string())
+            }
+        });
+
+        Ok(BrowsePhotosResult {
+            root_path: root.to_string_lossy().to_string(),
+            current_path: current.to_string_lossy().to_string(),
+            parent_path,
+            folders,
+            assets,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 // ---------------------------------------------------------------------------
@@ -1923,6 +2089,7 @@ fn main() {
             list_kei_albums,
             list_kei_smart_folders,
             get_recent_downloads,
+            browse_photos,
             open_folder,
             open_containing_folder,
         ])
