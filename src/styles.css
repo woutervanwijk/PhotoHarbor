@@ -808,6 +808,12 @@ html, body {
   opacity: 0;
 }
 
+#lightbox-live-badge {
+  top: 14px;
+  right: 14px;
+  bottom: auto;
+}
+
 .log-card { padding: 0; margin-bottom: 16px; }
 
 

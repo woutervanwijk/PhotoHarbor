@@ -168,6 +168,7 @@ document.getElementById("open-folder-btn").addEventListener("click", () => {
 const _lightboxOverlay = document.getElementById("lightbox-overlay");
 const _lightboxImg = document.getElementById("lightbox-img");
 const _lightboxVideo = document.getElementById("lightbox-video");
+const _lightboxLiveBadge = document.getElementById("lightbox-live-badge");
 const _lightboxMedia = document.querySelector(".lightbox-media");
 let _lightboxAssets = [];
 let _lightboxIndex = -1;
@@ -179,6 +180,7 @@ function showLightboxAsset(asset) {
   _lightboxVideo.controls = true;
   _lightboxVideo.muted = false;
   _lightboxVideo.loop = false;
+  _lightboxLiveBadge.classList.add("hidden");
 
   if (asset.isVideo) {
     _lightboxImg.classList.add("hidden");
@@ -188,6 +190,7 @@ function showLightboxAsset(asset) {
     _lightboxVideo.play().catch(() => {});
   } else if (asset.isLivePhoto && asset.liveVideoSrc) {
     _lightboxMedia.classList.add("lightbox-media--live");
+    _lightboxLiveBadge.classList.remove("hidden");
     _lightboxImg.src = asset.src;
     _lightboxImg.classList.remove("hidden");
     _lightboxVideo.src = asset.liveVideoSrc;
@@ -216,6 +219,7 @@ function closeLightbox() {
   _lightboxVideo.removeAttribute("src");
   _lightboxImg.removeAttribute("src");
   _lightboxMedia.classList.remove("lightbox-media--live", "lightbox-media--previewing");
+  _lightboxLiveBadge.classList.add("hidden");
 }
 
 function playLightboxLivePhoto() {
@@ -261,6 +265,7 @@ function navigateLightbox(delta) {
 document.getElementById("lightbox-close").addEventListener("click", closeLightbox);
 _lightboxOverlay.addEventListener("click", (e) => { if (e.target === _lightboxOverlay) closeLightbox(); });
 _lightboxMedia.addEventListener("pointerenter", playLightboxLivePhoto);
+_lightboxMedia.addEventListener("pointermove", playLightboxLivePhoto);
 _lightboxMedia.addEventListener("pointerleave", pauseLightboxLivePhoto);
 _lightboxVideo.addEventListener("playing", () => {
   const asset = _lightboxAssets[_lightboxIndex];
@@ -435,6 +440,7 @@ async function loadRecentThumbnails() {
             item.classList.add("thumb-item--previewing");
           });
           item.addEventListener("pointerenter", playPreview);
+          item.addEventListener("pointermove", playPreview);
           item.addEventListener("pointerleave", pausePreview);
           item.addEventListener("focus", playPreview);
           item.addEventListener("blur", pausePreview);
@@ -648,6 +654,7 @@ function resetSyncProgress() {
     visualPercent: 0,
     lifecycle: [],
     friendlySeen: false,
+    logProgressSeen: false,
   };
   renderSyncProgress();
 }
@@ -732,7 +739,7 @@ function upsertProgressLifecycle(item) {
 
 async function pollSyncProgress() {
   if (!syncRunning || !syncProgress) return;
-  if (syncProgress.friendlySeen) return;
+  if (syncProgress.friendlySeen || syncProgress.logProgressSeen) return;
   try {
     const status = await invoke("get_status");
     const downloaded = Math.max(0, status.last_run_downloaded ?? 0);
@@ -814,6 +821,8 @@ function updateSyncProgressFromLine(raw) {
     .replace(/^\[err\]\s*/, "")
     .replace(/^\[out\]\s*/, "")
     .trim();
+  const cleanParts = clean.split(/\r+/).map((part) => part.trim()).filter(Boolean);
+  const progressText = cleanParts.at(-1) ?? clean;
 
   const friendlyAuth = clean.match(/✓\s+Authenticated as\s+(.+)/i);
   if (friendlyAuth) {
@@ -838,37 +847,48 @@ function updateSyncProgressFromLine(raw) {
     });
   }
 
-  const friendlyDetail = clean.match(/│\s+(.+?)\s+·\s+(.+?)(?=\s*$)/);
+  const friendlyDetail = progressText.match(/│\s+(.+?)\s+·\s+(.+?)(?=\s*$)/);
   if (friendlyDetail && !/[\\/\d]+\s+·/.test(friendlyDetail[1])) {
     setProgressPatch({
       friendlySeen: true,
+      logProgressSeen: true,
       detail: `${friendlyDetail[1].trim()} · ${friendlyDetail[2].trim()}`,
     });
   }
 
-  const friendlyPercent = clean.match(/(\d+)%\s+([◐◓◑◒○●◌])/);
+  const friendlyPercent = progressText.match(/(\d+)%\s+([◐◓◑◒○●◌])/);
   if (friendlyPercent) {
     const percent = Number(friendlyPercent[1]);
+    const staleDbDetail = /\b[\d,]+\s+files remaining\b/i.test(syncProgress.detail ?? "");
     setProgressPatch({
       friendlySeen: true,
+      logProgressSeen: true,
       spinner: friendlyPercent[2],
+      detail: staleDbDetail ? "Syncing with kei" : syncProgress.detail,
       visualPercent: Math.max(syncProgress.visualPercent ?? 0, percent),
     });
   }
 
-  const friendlyFooter = clean.match(/([.\dKMGTPEiB\s-]+B\/s)\s+([\d,]+)\/([\d,]+)\s+·\s+([^│\r\n]+)/i);
+  const friendlyFooter = progressText.match(/((?:--|[\d,.]+)\s*(?:[KMGTPE]?i?B)?\/s)\s+([\d,]+)\s*\/\s*([\d,]+)\s+·\s+([^│\r\n]+)/i);
   if (friendlyFooter) {
     const [, speed, doneRaw, totalRaw, eta] = friendlyFooter;
+    const done = Number(doneRaw.replace(/,/g, ""));
+    const total = Number(totalRaw.replace(/,/g, ""));
     setProgressPatch({
       friendlySeen: true,
+      logProgressSeen: true,
+      title: "Downloading from iCloud",
+      detail: total > 0
+        ? `${fmtNum(Math.max(0, total - done))} files remaining`
+        : "Calculating remaining files",
       speed: speed.trim().replace(/\s+/g, " "),
-      downloaded: Number(doneRaw.replace(/,/g, "")),
-      total: Number(totalRaw.replace(/,/g, "")),
+      downloaded: done,
+      total,
       eta: eta.trim(),
     });
   }
 
-  const progressMatches = [...clean.matchAll(/\[(\d{2}:\d{2}:\d{2})\]\s+\[[^\]]+\]\s+([\d,]+)\/([\d,]+)\s+\(([^)]*)\)\s+([^\r\n]*?)(?=\s+\d{4}-\d{2}-\d{2}T|\s+\^C\d{4}-\d{2}-\d{2}T|$)/g)];
+  const progressMatches = [...progressText.matchAll(/\[(\d{2}:\d{2}:\d{2})\]\s+\[[^\]]+\]\s+([\d,]+)\/([\d,]+)\s+\(([^)]*)\)\s+([^\r\n]*?)(?=\s+\d{4}-\d{2}-\d{2}T|\s+\^C\d{4}-\d{2}-\d{2}T|$)/g)];
   const progressMatch = progressMatches.at(-1);
   if (progressMatch) {
     const [, elapsed, doneRaw, totalRaw, eta, filenameRaw] = progressMatch;
@@ -877,6 +897,7 @@ function updateSyncProgressFromLine(raw) {
     const filename = filenameRaw.trim();
     setProgressPatch({
       title: "Verifying files",
+      logProgressSeen: true,
       detail: filename ? `${filename} · ${eta} remaining` : `${elapsed} elapsed · ${eta} remaining`,
       downloaded: done,
       failed: syncProgress.failed,
