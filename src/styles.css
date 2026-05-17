@@ -655,7 +655,8 @@ html, body {
   z-index: 1;
 }
 
-.thumb-item--video video {
+.thumb-item--video video,
+.thumb-item--live video {
   position: absolute;
   inset: 0;
   z-index: 0;
@@ -673,11 +674,16 @@ html, body {
   opacity: 0;
 }
 
+.thumb-item--previewing.thumb-item--live > img {
+  opacity: 0;
+}
+
 .thumb-item--new {
   animation: thumbSlideIn 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.thumb-video-badge {
+.thumb-video-badge,
+.thumb-live-badge {
   position: absolute;
   bottom: 8px;
   right: 8px;
@@ -702,6 +708,24 @@ html, body {
   border-top: 7px solid transparent;
   border-bottom: 7px solid transparent;
   border-left: 11px solid white;
+}
+
+.thumb-live-badge::before,
+.thumb-live-badge::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid white;
+}
+
+.thumb-live-badge::before {
+  inset: 7px;
+  opacity: 0.95;
+}
+
+.thumb-live-badge::after {
+  inset: 11px;
+  background: white;
 }
 
 /* ── Lightbox ────────────────────────────────────────────────────────────── */
@@ -1111,9 +1135,42 @@ html, body {
 }
 
 .saved-msg {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 1100;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 7px 12px;
+  border: 1px solid rgba(48, 209, 88, 0.32);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--card-bg) 92%, var(--success) 8%);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
   font-size: 13px;
   color: var(--success);
   font-weight: 500;
+  pointer-events: none;
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.saved-msg::before {
+  content: "";
+  width: 7px;
+  height: 12px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg) translateY(-1px);
+}
+
+.saved-msg.hidden {
+  display: inline-flex !important;
+  opacity: 0;
+  transform: translateY(-6px);
+  visibility: hidden;
 }
 
 .kei-versions {
@@ -1272,6 +1329,7 @@ html, body {
 /* ── Modal ───────────────────────────────────────────────────────────────── */
 
 #modal-about-overlay,
+#setup-wizard-overlay,
 #modal-password-overlay,
 #modal-overlay {
   position: fixed;
@@ -1283,6 +1341,151 @@ html, body {
   z-index: 1000;
   -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
+}
+
+#setup-wizard {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  width: min(520px, calc(100vw - 40px));
+  padding: 28px 30px 24px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+
+.wizard-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.wizard-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+
+.wizard-header h2 {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 3px;
+}
+
+.wizard-header p,
+.wizard-hint {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.wizard-steps {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 22px;
+}
+
+.wizard-dot {
+  height: 4px;
+  flex: 1;
+  border-radius: 999px;
+  background: var(--btn-ghost-bg);
+}
+
+.wizard-dot.active {
+  background: var(--accent);
+}
+
+.wizard-step {
+  display: none;
+  min-height: 220px;
+}
+
+.wizard-step.active {
+  display: block;
+}
+
+.wizard-step h3 {
+  font-size: 14px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 14px;
+}
+
+.wizard-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.wizard-field input,
+.wizard-field select,
+.wizard-input-row input {
+  width: 100%;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.wizard-field input:focus,
+.wizard-field select:focus,
+.wizard-input-row input:focus {
+  border-color: var(--input-focus-border);
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2);
+}
+
+.wizard-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.wizard-input-row input {
+  min-width: 0;
+  flex: 1;
+}
+
+.wizard-check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 32px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.wizard-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.wizard-error {
+  min-height: 18px;
+  margin: 0 0 12px;
+  color: var(--destructive);
+  font-size: 12px;
+}
+
+.wizard-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.wizard-actions-right {
+  display: flex;
+  gap: 10px;
 }
 
 #modal-about {

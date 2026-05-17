@@ -1288,7 +1288,17 @@ async fn clear_kei_session() -> Result<(), String> {
 pub struct RecentAsset {
     pub path: String,
     pub is_video: bool,
+    pub is_live_photo: bool,
+    pub live_video_path: Option<String>,
     pub thumbnail_path: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct MediaFile {
+    ts: std::time::SystemTime,
+    path: std::path::PathBuf,
+    is_video: bool,
+    len: u64,
 }
 
 fn expand_tilde(path: &str) -> String {
@@ -1302,9 +1312,7 @@ fn expand_tilde(path: &str) -> String {
     }
 }
 
-fn collect_media_files(
-    root: &std::path::Path,
-) -> Vec<(std::time::SystemTime, std::path::PathBuf, bool, u64)> {
+fn collect_media_files(root: &std::path::Path) -> Vec<MediaFile> {
     let mut files = Vec::new();
     let mut dirs = vec![root.to_path_buf()];
     while let Some(dir) = dirs.pop() {
@@ -1357,13 +1365,78 @@ fn collect_media_files(
                             | "bmp"
                     );
                     if is_video || is_image {
-                        files.push((ts, path, is_video, meta.len()));
+                        files.push(MediaFile {
+                            ts,
+                            path,
+                            is_video,
+                            len: meta.len(),
+                        });
                     }
                 }
             }
         }
     }
     files
+}
+
+fn live_photo_pair_key(path: &std::path::Path, is_video: bool) -> Option<String> {
+    let parent = path.parent()?.to_string_lossy();
+    let stem = path.file_stem()?.to_string_lossy();
+    let stem_lower = stem.to_lowercase();
+    let base = if is_video {
+        stem_lower.strip_suffix("_hevc")?.to_string()
+    } else {
+        stem_lower
+    };
+    Some(format!("{parent}\0{base}"))
+}
+
+fn collapse_live_photos(files: Vec<MediaFile>) -> Vec<(MediaFile, Option<MediaFile>)> {
+    let mut live_videos = std::collections::HashMap::<String, MediaFile>::new();
+    let mut image_keys = std::collections::HashSet::<String>::new();
+    for file in files.iter().filter(|file| !file.is_video) {
+        if let Some(key) = live_photo_pair_key(&file.path, false) {
+            image_keys.insert(key);
+        }
+    }
+
+    for file in files.iter().filter(|file| file.is_video) {
+        if let Some(key) = live_photo_pair_key(&file.path, true) {
+            live_videos
+                .entry(key)
+                .and_modify(|existing| {
+                    if file.ts > existing.ts {
+                        *existing = file.clone();
+                    }
+                })
+                .or_insert_with(|| file.clone());
+        }
+    }
+
+    let mut consumed_live_videos = std::collections::HashSet::<String>::new();
+    let mut collapsed = Vec::new();
+    for file in files {
+        if file.is_video {
+            if let Some(key) = live_photo_pair_key(&file.path, true) {
+                if consumed_live_videos.contains(&key) || image_keys.contains(&key) {
+                    continue;
+                }
+            }
+            collapsed.push((file, None));
+            continue;
+        }
+
+        if let Some(key) = live_photo_pair_key(&file.path, false) {
+            if let Some(video) = live_videos.get(&key).cloned() {
+                consumed_live_videos.insert(key);
+                collapsed.push((file, Some(video)));
+                continue;
+            }
+        }
+
+        collapsed.push((file, None));
+    }
+    collapsed
 }
 
 fn stable_thumb_key(path: &std::path::Path, ts: std::time::SystemTime, len: u64) -> String {
@@ -1519,22 +1592,40 @@ async fn get_recent_downloads(directory: String, newer_than: Option<u64>) -> Vec
         }
         let mut files = collect_media_files(&dir);
         if let Some(cutoff) = newer_than {
-            files.retain(|(ts, _, _, _)| {
-                ts.duration_since(std::time::UNIX_EPOCH)
+            files.retain(|file| {
+                file.ts
+                    .duration_since(std::time::UNIX_EPOCH)
                     .map(|duration| duration.as_secs() > cutoff)
                     .unwrap_or(false)
             });
         }
-        files.sort_by(|a, b| b.0.cmp(&a.0));
-        files.truncate(100);
-        files
+        let mut collapsed = collapse_live_photos(files);
+        collapsed.sort_by(|a, b| {
+            let a_ts =
+                a.1.as_ref()
+                    .map(|video| video.ts)
+                    .unwrap_or(a.0.ts)
+                    .max(a.0.ts);
+            let b_ts =
+                b.1.as_ref()
+                    .map(|video| video.ts)
+                    .unwrap_or(b.0.ts)
+                    .max(b.0.ts);
+            b_ts.cmp(&a_ts)
+        });
+        collapsed.truncate(100);
+        collapsed
             .into_iter()
-            .map(|(ts, path, is_video, len)| {
-                let thumbnail_path = cached_thumbnail_for(&path, is_video, ts, len)
-                    .map(|path| path.to_string_lossy().to_string());
+            .map(|(file, live_video)| {
+                let thumbnail_path =
+                    cached_thumbnail_for(&file.path, file.is_video, file.ts, file.len)
+                        .map(|path| path.to_string_lossy().to_string());
                 RecentAsset {
-                    path: path.to_string_lossy().to_string(),
-                    is_video,
+                    path: file.path.to_string_lossy().to_string(),
+                    is_video: file.is_video,
+                    is_live_photo: live_video.is_some(),
+                    live_video_path: live_video
+                        .map(|video| video.path.to_string_lossy().to_string()),
                     thumbnail_path,
                 }
             })

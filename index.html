@@ -433,6 +433,91 @@
     </div><!-- /#right-col -->
   </div><!-- /#app -->
 
+  <!-- First-run setup wizard -->
+  <div id="setup-wizard-overlay" class="hidden" role="dialog" aria-modal="true">
+    <div id="setup-wizard">
+      <div class="wizard-header">
+        <img class="wizard-icon" src="src/app-icon.png" alt="" />
+        <div>
+          <h2>Set up Kei PhotoSync</h2>
+          <p>Choose the essentials before the first sync.</p>
+        </div>
+      </div>
+
+      <div class="wizard-steps" aria-hidden="true">
+        <span class="wizard-dot active" data-step-dot="0"></span>
+        <span class="wizard-dot" data-step-dot="1"></span>
+        <span class="wizard-dot" data-step-dot="2"></span>
+      </div>
+
+      <div class="wizard-step active" data-wizard-step="0">
+        <h3>Account</h3>
+        <label class="wizard-field">
+          <span>iCloud Username</span>
+          <input type="email" id="wizard-username" placeholder="you@icloud.com" autocomplete="username" />
+        </label>
+        <label class="wizard-field">
+          <span>Region</span>
+          <select id="wizard-domain">
+            <option value="com" selected>International</option>
+            <option value="cn">China</option>
+          </select>
+        </label>
+        <p class="wizard-hint">Your password is handled by kei and the system keychain, not stored by this app.</p>
+      </div>
+
+      <div class="wizard-step" data-wizard-step="1">
+        <h3>Downloads</h3>
+        <label class="wizard-field">
+          <span>Download Directory</span>
+          <div class="wizard-input-row">
+            <input type="text" id="wizard-directory" placeholder="~/Photos/iCloud" />
+            <button type="button" class="btn-ghost" id="wizard-directory-pick">Browse…</button>
+          </div>
+        </label>
+        <label class="wizard-field">
+          <span>Folder Structure</span>
+          <select id="wizard-folder-structure">
+            <option value="%Y/%m" selected>Year / Month</option>
+            <option value="%Y/%m/%d">Year / Month / Day</option>
+            <option value="%Y">Year</option>
+            <option value="">Flat folder</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="wizard-step" data-wizard-step="2">
+        <h3>Sync Scope</h3>
+        <label class="wizard-check">
+          <input type="checkbox" id="wizard-all-albums" checked />
+          <span>Sync all albums</span>
+        </label>
+        <label class="wizard-check">
+          <input type="checkbox" id="wizard-unfiled" checked />
+          <span>Include photos that are not in an album</span>
+        </label>
+        <label class="wizard-check">
+          <input type="checkbox" id="wizard-photos" checked />
+          <span>Download photos</span>
+        </label>
+        <label class="wizard-check">
+          <input type="checkbox" id="wizard-videos" checked />
+          <span>Download videos</span>
+        </label>
+      </div>
+
+      <p id="wizard-error" class="wizard-error hidden"></p>
+
+      <div class="wizard-actions">
+        <button type="button" class="btn-ghost" id="wizard-later-btn">Later</button>
+        <div class="wizard-actions-right">
+          <button type="button" class="btn-ghost hidden" id="wizard-back-btn">Back</button>
+          <button type="button" class="btn-primary" id="wizard-next-btn">Continue</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- kei not found overlay -->
   <div id="kei-missing-overlay" class="hidden">
     <div id="kei-missing-card">

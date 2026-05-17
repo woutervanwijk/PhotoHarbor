@@ -257,7 +257,7 @@ async function loadRecentThumbnails() {
     if (!assets || assets.length === 0) { _thumbsEl.classList.add("hidden"); return; }
 
     const newPaths = new Set(assets.map((a) => a.path));
-    const newSignature = assets.map((a) => a.path).join("\n");
+    const newSignature = assets.map((a) => `${a.path}\0${a.live_video_path ?? ""}`).join("\n");
     if (newSignature === _shownThumbSignature && !_thumbsEl.classList.contains("hidden")) {
       return;
     }
@@ -269,6 +269,8 @@ async function loadRecentThumbnails() {
       path: asset.path,
       src: convertFileSrc(asset.path),
       isVideo: asset.is_video,
+      isLivePhoto: asset.is_live_photo,
+      liveVideoSrc: asset.live_video_path ? convertFileSrc(asset.live_video_path) : null,
     }));
     if (currentLightboxPath) {
       _lightboxIndex = _lightboxAssets.findIndex((asset) => asset.path === currentLightboxPath);
@@ -354,6 +356,55 @@ async function loadRecentThumbnails() {
         item.appendChild(badge);
         const observer = getVideoThumbObserver();
         if (observer && !asset.thumbnail_path) observer.observe(item);
+      } else if (asset.is_live_photo) {
+        item.classList.add("thumb-item--live");
+        item.setAttribute("aria-label", "Open Live Photo preview");
+        const img = document.createElement("img");
+        img.src = thumbSrc;
+        img.alt = "";
+        img.loading = "lazy";
+        img.decoding = "async";
+        img.onerror = () => item.remove();
+        item.appendChild(img);
+
+        if (asset.live_video_path) {
+          const liveVideoSrc = convertFileSrc(asset.live_video_path);
+          const video = document.createElement("video");
+          video.muted = true;
+          video.playsInline = true;
+          video.preload = "metadata";
+          video.onerror = () => video.remove();
+          let videoLoaded = false;
+          const loadLiveVideo = () => {
+            if (videoLoaded) return;
+            videoLoaded = true;
+            video.src = liveVideoSrc;
+            video.load();
+          };
+          const playPreview = () => {
+            loadLiveVideo();
+            video.play().catch(() => {});
+          };
+          const pausePreview = () => {
+            video.pause();
+            item.classList.remove("thumb-item--previewing");
+            if (video.readyState > 0) {
+              try { video.currentTime = 0; } catch {}
+            }
+          };
+          video.addEventListener("playing", () => {
+            item.classList.add("thumb-item--previewing");
+          });
+          item.addEventListener("pointerenter", playPreview);
+          item.addEventListener("pointerleave", pausePreview);
+          item.addEventListener("focus", playPreview);
+          item.addEventListener("blur", pausePreview);
+          item.appendChild(video);
+        }
+
+        const badge = document.createElement("div");
+        badge.className = "thumb-live-badge";
+        item.appendChild(badge);
       } else {
         const img = document.createElement("img");
         img.src = thumbSrc;
@@ -1411,6 +1462,171 @@ document.getElementById("auth-wiki-btn").addEventListener("click", () => {
 });
 
 // ---------------------------------------------------------------------------
+// First-run setup wizard
+// ---------------------------------------------------------------------------
+
+const setupWizardOverlay = document.getElementById("setup-wizard-overlay");
+const wizardSteps = Array.from(document.querySelectorAll("[data-wizard-step]"));
+const wizardDots = Array.from(document.querySelectorAll("[data-step-dot]"));
+const wizardBackBtn = document.getElementById("wizard-back-btn");
+const wizardNextBtn = document.getElementById("wizard-next-btn");
+const wizardLaterBtn = document.getElementById("wizard-later-btn");
+const wizardError = document.getElementById("wizard-error");
+let wizardStepIndex = 0;
+let wizardSaving = false;
+
+function configNeedsSetup(cfg) {
+  const hasUsername = !!cfg.auth?.username?.trim?.();
+  const hasDirectory = !!cfg.download?.directory?.trim?.();
+  const skipsPhotos = cfg.filters?.skip_photos === true;
+  const skipsVideos = cfg.filters?.skip_videos === true;
+  return !hasUsername || !hasDirectory || (skipsPhotos && skipsVideos);
+}
+
+function setWizardError(message) {
+  wizardError.textContent = message || "";
+  wizardError.classList.toggle("hidden", !message);
+}
+
+function setWizardStep(index) {
+  wizardStepIndex = Math.max(0, Math.min(wizardSteps.length - 1, index));
+  wizardSteps.forEach((step, i) => step.classList.toggle("active", i === wizardStepIndex));
+  wizardDots.forEach((dot, i) => dot.classList.toggle("active", i <= wizardStepIndex));
+  wizardBackBtn.classList.toggle("hidden", wizardStepIndex === 0);
+  wizardNextBtn.textContent = wizardStepIndex === wizardSteps.length - 1 ? "Save Setup" : "Continue";
+  setWizardError("");
+}
+
+function validateWizardStep() {
+  if (wizardStepIndex === 0) {
+    const username = document.getElementById("wizard-username").value.trim();
+    if (!username) return "Enter your iCloud username.";
+  }
+  if (wizardStepIndex === 1) {
+    const directory = document.getElementById("wizard-directory").value.trim();
+    if (!directory) return "Choose a download directory.";
+  }
+  if (wizardStepIndex === 2) {
+    const photos = document.getElementById("wizard-photos").checked;
+    const videos = document.getElementById("wizard-videos").checked;
+    if (!photos && !videos) return "Enable photos, videos, or both.";
+  }
+  return "";
+}
+
+function showSetupWizard(cfg = {}) {
+  document.getElementById("wizard-username").value = cfg.auth?.username ?? "";
+  document.getElementById("wizard-domain").value = cfg.auth?.domain ?? "com";
+  document.getElementById("wizard-directory").value = cfg.download?.directory ?? "";
+  document.getElementById("wizard-folder-structure").value = cfg.download?.folder_structure ?? "%Y/%m";
+  document.getElementById("wizard-unfiled").checked = cfg.filters?.unfiled ?? true;
+  document.getElementById("wizard-photos").checked = !(cfg.filters?.skip_photos === true);
+  document.getElementById("wizard-videos").checked = !(cfg.filters?.skip_videos === true);
+  const albumFilters = cfg.filters?.albums ?? [];
+  const hasSpecificAlbums = albumFilters.some((album) => !album.startsWith("!") && album.toLowerCase() !== "all");
+  document.getElementById("wizard-all-albums").checked = !hasSpecificAlbums;
+  setWizardStep(0);
+  setupWizardOverlay.classList.remove("hidden");
+  setTimeout(() => document.getElementById("wizard-username").focus(), 100);
+}
+
+function hideSetupWizard() {
+  setupWizardOverlay.classList.add("hidden");
+}
+
+async function saveWizardSettings() {
+  if (wizardSaving) return;
+  const error = validateWizardStep();
+  if (error) {
+    setWizardError(error);
+    return;
+  }
+
+  const username = document.getElementById("wizard-username").value.trim();
+  const domain = document.getElementById("wizard-domain").value;
+  const directory = document.getElementById("wizard-directory").value.trim();
+  const folderStructure = document.getElementById("wizard-folder-structure").value;
+  const allAlbums = document.getElementById("wizard-all-albums").checked;
+  const unfiled = document.getElementById("wizard-unfiled").checked;
+  const photos = document.getElementById("wizard-photos").checked;
+  const videos = document.getElementById("wizard-videos").checked;
+
+  const config = {
+    log_level: null,
+    auth: {
+      username,
+      domain: domain !== "com" ? domain : null,
+    },
+    download: {
+      directory,
+      threads_num: null,
+      folder_structure: folderStructure || null,
+      folder_structure_albums: "{album}",
+      folder_structure_smart_folders: "{smart-folder}",
+      set_exif_datetime: null,
+      retry: null,
+    },
+    filters: {
+      skip_videos: videos ? null : true,
+      skip_photos: photos ? null : true,
+      libraries: null,
+      albums: null,
+      exclude_albums: null,
+      smart_folders: null,
+      unfiled: unfiled ? null : false,
+      recent: null,
+    },
+    watch: { interval: null },
+  };
+
+  wizardSaving = true;
+  wizardNextBtn.disabled = true;
+  wizardBackBtn.disabled = true;
+  wizardLaterBtn.disabled = true;
+  try {
+    await Promise.all([
+      invoke("save_config", { config }),
+      invoke("save_app_settings", { settings: {
+        use_system_kei: false,
+        extra_args: "--friendly",
+        all_albums: allAlbums,
+        folder_structure: folderStructure || null,
+        album_folder_structure: "{album}",
+        smart_folder_structure: "{smart-folder}",
+      } }),
+    ]);
+    hideSetupWizard();
+    await loadSettings();
+    await loadDashboard();
+    showView("sync");
+  } catch (err) {
+    setWizardError(`Failed to save setup: ${err}`);
+  } finally {
+    wizardSaving = false;
+    wizardNextBtn.disabled = false;
+    wizardBackBtn.disabled = false;
+    wizardLaterBtn.disabled = false;
+  }
+}
+
+wizardBackBtn.addEventListener("click", () => setWizardStep(wizardStepIndex - 1));
+wizardNextBtn.addEventListener("click", () => {
+  const error = validateWizardStep();
+  if (error) {
+    setWizardError(error);
+    return;
+  }
+  if (wizardStepIndex < wizardSteps.length - 1) setWizardStep(wizardStepIndex + 1);
+  else saveWizardSettings();
+});
+wizardLaterBtn.addEventListener("click", () => hideSetupWizard());
+
+document.getElementById("wizard-directory-pick").addEventListener("click", async () => {
+  const dir = await openDialog({ directory: true, multiple: false, title: "Select Download Directory" });
+  if (dir) document.getElementById("wizard-directory").value = dir;
+});
+
+// ---------------------------------------------------------------------------
 // About Modal
 // ---------------------------------------------------------------------------
 
@@ -1642,6 +1858,12 @@ twofaInput.addEventListener("keydown", (e) => {
   try {
     const status = await invoke("get_status");
     if (status.is_syncing) setSyncRunning(true);
+  } catch {}
+
+  try {
+    const cfg = await invoke("get_config");
+    const status = await invoke("get_status").catch(() => ({ is_syncing: false }));
+    if (!status.is_syncing && configNeedsSetup(cfg)) showSetupWizard(cfg);
   } catch {}
 })();
 
