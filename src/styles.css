@@ -685,16 +685,16 @@ html, body {
 .thumb-video-badge,
 .thumb-live-badge {
   position: absolute;
-  bottom: 8px;
-  right: 8px;
-  width: 30px;
-  height: 30px;
-  background: rgba(0, 0, 0, 0.72);
+  bottom: 7px;
+  right: 7px;
+  width: 15px;
+  height: 15px;
+  background: rgba(0, 0, 0, 0.54);
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.54);
   z-index: 10;
   pointer-events: none;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.48);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.36);
   transform: translateZ(1px);
   will-change: transform;
 }
@@ -705,9 +705,9 @@ html, body {
   top: 50%;
   left: 52%;
   transform: translate(-50%, -50%);
-  border-top: 7px solid transparent;
-  border-bottom: 7px solid transparent;
-  border-left: 11px solid white;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  border-left: 5.5px solid rgba(255, 255, 255, 0.75);
 }
 
 .thumb-live-badge::before,
@@ -715,17 +715,21 @@ html, body {
   content: "";
   position: absolute;
   border-radius: 50%;
-  border: 2px solid white;
+  border: 1px solid rgba(255, 255, 255, 0.75);
 }
 
 .thumb-live-badge::before {
-  inset: 7px;
-  opacity: 0.95;
+  inset: 3px;
 }
 
 .thumb-live-badge::after {
-  inset: 11px;
-  background: white;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 3px;
+  border: none;
+  background: rgba(255, 255, 255, 0.75);
+  transform: translate(-50%, -50%);
 }
 
 /* ── Lightbox ────────────────────────────────────────────────────────────── */
@@ -764,6 +768,7 @@ html, body {
 .lightbox-close:hover { background: rgba(255, 255, 255, 0.24); }
 
 .lightbox-media {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -779,6 +784,28 @@ html, body {
   object-fit: contain;
   display: block;
   box-shadow: 0 32px 80px rgba(0, 0, 0, 0.6);
+}
+
+.lightbox-media--live #lightbox-img,
+.lightbox-media--live #lightbox-video {
+  transition: opacity 0.14s ease;
+}
+
+.lightbox-media--live #lightbox-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.lightbox-media--previewing #lightbox-video {
+  opacity: 1;
+}
+
+.lightbox-media--previewing #lightbox-img {
+  opacity: 0;
 }
 
 .log-card { padding: 0; margin-bottom: 16px; }
