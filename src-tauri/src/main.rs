@@ -101,6 +101,16 @@ pub struct AppState {
     pub sync_stdin: Arc<Mutex<Option<tokio::process::ChildStdin>>>,
 }
 
+#[derive(Debug, Default, Clone)]
+struct FriendlySyncStats {
+    started_at: i64,
+    downloaded: Option<i64>,
+    failed: Option<i64>,
+    skipped: Option<i64>,
+    library_items: Option<i64>,
+    duration_secs: Option<i64>,
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -154,6 +164,229 @@ fn db_path(username: &str) -> Result<std::path::PathBuf, String> {
     }
 
     Err(format!("No kei database found in {:?}", cookies_dir))
+}
+
+fn unix_now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or_default()
+}
+
+fn parse_count(raw: &str) -> Option<i64> {
+    raw.replace(',', "").parse::<i64>().ok()
+}
+
+fn parse_duration_secs(raw: &str) -> Option<i64> {
+    let lower = raw.trim().to_lowercase();
+    if lower.is_empty() {
+        return None;
+    }
+
+    let mut total = 0i64;
+    let mut saw_unit = false;
+    let parts = lower.split_whitespace().collect::<Vec<_>>();
+    for (index, part) in parts.iter().enumerate() {
+        let number: String = part.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if number.is_empty() {
+            continue;
+        }
+        let value = number.parse::<i64>().ok()?;
+        let inline_unit = part[number.len()..].trim();
+        let unit = if inline_unit.is_empty() {
+            parts.get(index + 1).copied().unwrap_or_default()
+        } else {
+            inline_unit
+        };
+        if unit.starts_with('h') || part.contains("hour") {
+            total += value * 3600;
+            saw_unit = true;
+        } else if unit.starts_with('m') || part.contains("minute") {
+            total += value * 60;
+            saw_unit = true;
+        } else if unit.starts_with('s') || part.contains("second") {
+            total += value;
+            saw_unit = true;
+        }
+    }
+
+    if saw_unit {
+        Some(total)
+    } else {
+        lower.parse::<i64>().ok()
+    }
+}
+
+fn strip_ansi_codes(raw: &str) -> String {
+    let mut clean = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            for ch in chars.by_ref() {
+                if ch.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            clean.push(c);
+        }
+    }
+    clean
+}
+
+fn first_count_after<'a>(line: &'a str, label: &str) -> Option<i64> {
+    let idx = line.find(label)?;
+    let rest = line[idx + label.len()..].trim_start();
+    let digits: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == ',')
+        .collect();
+    parse_count(&digits)
+}
+
+impl FriendlySyncStats {
+    fn new(started_at: i64) -> Self {
+        Self {
+            started_at,
+            ..Default::default()
+        }
+    }
+
+    fn observe_line(&mut self, raw: &str) {
+        let clean = strip_ansi_codes(raw);
+        let line = clean.replace('✓', " ");
+        let lower = line.to_lowercase();
+
+        if let Some(count) = first_count_after(&lower, "downloaded ") {
+            if lower.contains("new file") {
+                self.downloaded = Some(count);
+            }
+        }
+
+        if let Some(done_idx) = lower.find("done.") {
+            let rest = &lower[done_idx + "done.".len()..];
+            if let Some(count) = first_count_after(rest, "") {
+                if rest.contains("new file") {
+                    self.downloaded = Some(count);
+                }
+            }
+            if let Some(in_idx) = rest.find(" in ") {
+                let duration = rest[in_idx + 4..].trim_end_matches('.').trim();
+                if let Some(seconds) = parse_duration_secs(duration) {
+                    self.duration_secs = Some(seconds);
+                }
+            }
+        }
+
+        if self.downloaded.is_none() {
+            if let Some(count) = first_count_after(&lower, "new ") {
+                if lower.contains(" new") {
+                    self.downloaded = Some(count);
+                }
+            }
+        }
+
+        if let Some(count) = first_count_after(&lower, "skipped ") {
+            self.skipped = Some(count);
+        }
+        if let Some(count) = first_count_after(&lower, "failed ") {
+            self.failed = Some(count);
+        }
+        if let Some(count) = first_count_after(&lower, "library ") {
+            if lower.contains("items") {
+                self.library_items = Some(count);
+            }
+        }
+        if let Some(seconds) = lower
+            .find("time ")
+            .and_then(|idx| parse_duration_secs(&lower[idx + 5..]))
+        {
+            self.duration_secs = Some(seconds);
+        }
+    }
+
+    fn has_values(&self) -> bool {
+        self.downloaded.is_some()
+            || self.failed.is_some()
+            || self.skipped.is_some()
+            || self.library_items.is_some()
+            || self.duration_secs.is_some()
+    }
+}
+
+async fn persist_friendly_sync_stats(stats: FriendlySyncStats, success: bool) {
+    if !stats.has_values() {
+        return;
+    }
+
+    let config = get_config().await.unwrap_or_default();
+    let username = config
+        .auth
+        .as_ref()
+        .and_then(|auth| auth.username.clone())
+        .unwrap_or_default();
+    if username.is_empty() {
+        return;
+    }
+    let Ok(db) = db_path(&username) else {
+        return;
+    };
+
+    let _ = tokio::task::spawn_blocking(move || {
+        let conn = rusqlite::Connection::open(&db).ok()?;
+        let completed_at = unix_now_secs();
+        let started_at = stats
+            .duration_secs
+            .map(|duration| completed_at.saturating_sub(duration))
+            .unwrap_or(stats.started_at);
+        let downloaded = stats.downloaded.unwrap_or_default();
+        let failed = stats.failed.unwrap_or_default();
+        let seen = stats
+            .library_items
+            .or_else(|| stats.skipped.map(|skipped| skipped + downloaded + failed))
+            .unwrap_or(downloaded + failed);
+        let interrupted = if success { 0i64 } else { 1i64 };
+
+        let latest: Option<(i64, i64, Option<i64>)> = conn
+            .query_row(
+                "SELECT id, started_at, completed_at FROM sync_runs ORDER BY id DESC LIMIT 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .ok();
+
+        if let Some((id, latest_started, latest_completed)) = latest {
+            if latest_completed.is_none() || latest_started >= stats.started_at.saturating_sub(30) {
+                let _ = conn.execute(
+                    "UPDATE sync_runs
+                     SET completed_at = ?1,
+                         assets_seen = ?2,
+                         assets_downloaded = ?3,
+                         assets_failed = ?4,
+                         interrupted = ?5
+                     WHERE id = ?6",
+                    rusqlite::params![completed_at, seen, downloaded, failed, interrupted, id],
+                );
+                return Some(());
+            }
+        }
+
+        let _ = conn.execute(
+            "INSERT INTO sync_runs
+             (started_at, completed_at, assets_seen, assets_downloaded, assets_failed, interrupted)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![
+                started_at,
+                completed_at,
+                seen,
+                downloaded,
+                failed,
+                interrupted
+            ],
+        );
+        Some(())
+    })
+    .await;
 }
 
 // ---------------------------------------------------------------------------
@@ -706,6 +939,7 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
     let stdin = child.stdin.take().expect("stdin piped");
     let stdout = child.stdout.take().expect("stdout piped");
     let stderr = child.stderr.take().expect("stderr piped");
+    let sync_started_at = unix_now_secs();
 
     // Store child and stdin so stop_sync / submit_password can reach them.
     let child_arc = state.sync_child.clone();
@@ -726,6 +960,7 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
         // Batch log lines and flush at most every 50 ms to avoid flooding the
         // WebView IPC channel with hundreds of individual events per second.
         let mut log_batch: Vec<String> = Vec::new();
+        let mut friendly_stats = FriendlySyncStats::new(sync_started_at);
         let mut flush_ticker = tokio::time::interval(tokio::time::Duration::from_millis(50));
         flush_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -733,6 +968,7 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
         macro_rules! handle_line {
             ($l:expr, $prefix:expr) => {{
                 let l: String = $l;
+                friendly_stats.observe_line(&l);
                 let ll = l.to_lowercase();
                 let is_2fa = ll.contains("waiting for 2fa")
                     || ll.contains("2fa code requested")
@@ -816,6 +1052,7 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
 
         // Drain stderr after stdout closes.
         while let Ok(Some(l)) = stderr_lines.next_line().await {
+            friendly_stats.observe_line(&l);
             let ll = l.to_lowercase();
             let is_2fa = ll.contains("waiting for 2fa")
                 || ll.contains("2fa code requested")
@@ -861,6 +1098,7 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
                 Ok(s) => format!("sync-failed:exit code {}", s.code().unwrap_or(-1)),
                 Err(e) => format!("sync-failed:{e}"),
             };
+            persist_friendly_sync_stats(friendly_stats, !msg.starts_with("sync-failed")).await;
             if msg.starts_with("sync-failed") {
                 let _ = app_handle.emit("sync-failed", &msg[12..]);
             } else {
