@@ -752,22 +752,31 @@ html, body {
 .folder-icon {
   position: relative;
   width: 16px;
-  height: 12px;
+  height: 14px;
   flex: 0 0 16px;
-  border: 1.6px solid var(--accent);
-  border-radius: 2px;
   transform: translateY(1px);
 }
 
 .folder-icon::before {
   content: "";
   position: absolute;
+  left: 0;
+  top: 4px;
+  width: 16px;
+  height: 10px;
+  border: 1.6px solid var(--accent);
+  border-radius: 2px;
+}
+
+.folder-icon::after {
+  content: "";
+  position: absolute;
   left: 1px;
-  top: -5px;
+  top: 1px;
   width: 8px;
   height: 5px;
   border: 1.6px solid var(--accent);
-  border-bottom: 0;
+  border-bottom: none;
   border-radius: 2px 2px 0 0;
 }
 
