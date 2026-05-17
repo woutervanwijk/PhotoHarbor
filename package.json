@@ -1,6 +1,6 @@
 {
   "name": "kei-photosync",
-  "version": "0.14.0",
+  "version": "0.14.2",
   "description": "GUI for the kei iCloud photo sync tool",
   "scripts": {
     "tauri": "tauri",
