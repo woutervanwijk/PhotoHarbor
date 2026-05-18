@@ -74,6 +74,24 @@ function fmtNum(n) {
   return n === null || n === undefined ? "—" : n.toLocaleString();
 }
 
+function cleanKeiLine(raw) {
+  return stripAnsi(String(raw))
+    .replace(/^\[err\]\s*/, "")
+    .replace(/^\[out\]\s*/, "")
+    .trim();
+}
+
+function getKeiErrorWarning(raw) {
+  const clean = cleanKeiLine(raw);
+  const match = clean.match(/^Error:\s*(.+)$/is);
+  if (!match) return null;
+  return {
+    title: "kei Error",
+    body: match[1].trim() || clean,
+    key: clean,
+  };
+}
+
 function getUnknownSmartFolderWarning(raw) {
   const clean = stripAnsi(String(raw))
     .replace(/^\[err\]\s*/, "")
@@ -89,6 +107,7 @@ function getUnknownSmartFolderWarning(raw) {
     body: available
       ? `'${folder}' is not an Apple smart folder.\n\nAvailable smart folders: ${available}`
       : `'${folder}' is not an Apple smart folder.`,
+    key: clean,
   };
 }
 
@@ -822,16 +841,31 @@ function appendGlobalLog(raw) {
 // ---------------------------------------------------------------------------
 
 let syncRunning = false;
-let smartFolderWarningShown = false;
+const shownKeiErrorWarnings = new Set();
+const pendingKeiErrorWarnings = [];
+let keiErrorWarningOpen = false;
 
-async function showSmartFolderWarning(warning) {
-  if (smartFolderWarningShown) return;
-  smartFolderWarningShown = true;
+async function drainKeiErrorWarnings() {
+  if (keiErrorWarningOpen) return;
+  const warning = pendingKeiErrorWarnings.shift();
+  if (!warning) return;
+  keiErrorWarningOpen = true;
   try {
     await message(warning.body, { title: warning.title, kind: "warning" });
   } catch (err) {
-    console.error("smart folder warning dialog failed:", err);
+    console.error("kei error warning dialog failed:", err);
+  } finally {
+    keiErrorWarningOpen = false;
+    drainKeiErrorWarnings();
   }
+}
+
+function showKeiErrorWarning(warning) {
+  const key = warning.key || `${warning.title}\0${warning.body}`;
+  if (shownKeiErrorWarnings.has(key)) return;
+  shownKeiErrorWarnings.add(key);
+  pendingKeiErrorWarnings.push(warning);
+  drainKeiErrorWarnings();
 }
 
 let syncProgress = null;
@@ -1273,8 +1307,8 @@ function setSyncRunning(running) {
 listen("sync-output-batch", (event) => {
   for (const line of event.payload) {
     console.log("[kei]", line);
-    const smartFolderWarning = getUnknownSmartFolderWarning(line);
-    if (smartFolderWarning) showSmartFolderWarning(smartFolderWarning);
+    const errorWarning = getKeiErrorWarning(line) || getUnknownSmartFolderWarning(line);
+    if (errorWarning) showKeiErrorWarning(errorWarning);
     updateSyncProgressFromLine(line);
     _logQueue.push(line);
     appendGlobalLog(line);
@@ -1329,7 +1363,9 @@ async function doStartSync() {
   hide2FAModal();
   resetSyncProgress();
   setSyncRunning(true);
-  smartFolderWarningShown = false;
+  shownKeiErrorWarnings.clear();
+  pendingKeiErrorWarnings.length = 0;
+  keiErrorWarningOpen = false;
   syncLog.textContent = "";
   syncLogCompact.innerHTML = '<span class="log-compact-placeholder">—</span>';
   resetSyncDedup();
