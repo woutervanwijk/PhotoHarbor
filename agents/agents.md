@@ -37,6 +37,11 @@ A Tauri v2 cross-platform desktop GUI that wraps the [kei](https://github.com/rh
 | `src-tauri/binaries/.kei-version` | Pinned kei release tag (committed); used by prepare-sidecar to reproduce the same version |
 | `scripts/prepare-sidecar.js` | Downloads the kei binary from GitHub into `src-tauri/binaries/` for bundling |
 | `scripts/build-windows.sh` | Cross-compiles a Windows `.exe` on macOS using `cargo-xwin` + LLVM |
+| `.github/workflows/build.yml` | Tag-triggered release workflow for macOS, Windows, Linux, and draft GitHub Releases |
+
+## Documentation maintenance
+
+When build, release, signing, dependency, or workflow behavior changes, update both `README.md` and this file in the same change. These are the two authoritative human/agent references for day-to-day repo work.
 
 ## Backend commands (src-tauri/src/main.rs)
 
@@ -56,6 +61,11 @@ request_2fa_code(app)          -> ()               // runs kei login get-code
 submit_2fa(app, code)          -> ()               // runs kei login submit-code <CODE>
 clear_kei_session()            -> ()               // deletes session/cookie files
 list_kei_albums()              -> Vec<String>      // runs kei list albums
+list_kei_smart_folders()       -> Vec<String>      // runs kei and returns Apple smart folder names
+get_recent_downloads()         -> Vec<RecentAsset> // 100 newest media assets, cached thumbs, Live Photo pairing
+browse_photos()                -> BrowsePhotosResult // direct child folders + direct media for one folder
+open_folder(path)              -> ()               // open folder in system file manager
+open_containing_folder(path)   -> ()               // open media file's containing folder
 open_url(url)                  -> ()               // opens URL in system browser
 ```
 
@@ -115,6 +125,26 @@ To update kei: `node scripts/prepare-sidecar.js --force`, then commit `.kei-vers
 2. `$KEI_BIN` env override
 3. `which`/`where` PATH lookup (via login shell on macOS/Linux)
 
+## Release CI and signing
+
+Tagged pushes (`v*`) run `.github/workflows/build.yml` and create a draft GitHub Release. macOS builds are universal and use Apple Developer ID signing/notarization in CI.
+
+Required macOS signing secrets:
+
+| Secret | Meaning |
+|---|---|
+| `APPLE_CERTIFICATE` | Base64-encoded Developer ID Application `.p12` certificate with private key |
+| `APPLE_CERTIFICATE_PASSWORD` | Password for the `.p12` file |
+| `APPLE_ID` | Apple ID email for notarization |
+| `APPLE_PASSWORD` | Apple app-specific password, not the normal Apple ID password |
+| `APPLE_TEAM_ID` | 10-character Apple Developer Team ID |
+
+The workflow imports the `.p12` into a temporary keychain, selects the `Developer ID Application` identity, builds only the notarized `.app` with Tauri (`--bundles app`), verifies the signature, then creates a plain DMG with `hdiutil`. The DMG is signed, notarized, stapled, and collected from `src-tauri/target/universal-apple-darwin/release/bundle/dmg/`.
+
+Do not re-enable Tauri's default DMG layout script unless it is verified in GitHub Actions; it has failed in CI after successful app notarization. The plain `hdiutil` DMG is intentional.
+
+Tauri Rust and npm packages must stay on the same major/minor release. Example: Rust `tauri 2.11.x` must be paired with `@tauri-apps/api 2.11.x`. The Tauri npm packages are pinned exactly in `package.json`; if Dependabot updates Rust or npm Tauri packages, align the other side and update `package-lock.json`.
+
 ## kei data locations
 
 | Platform | Config dir | Database |
@@ -166,8 +196,11 @@ All fields are `Option` so that unset fields are omitted from the TOML output (k
 
 - Bundled by Vite (dev server on port 1420). `index.html` loads `src/app.js` as `type="module"`.
 - Navigation is done by toggling `class="view active"` on `<section>` elements.
-- Each view has a load function (`loadDashboard`, `loadHistory`, `loadSettings`) called when the view is shown.
+- Each view has a load function (`loadDashboard`/sync refresh, `loadBrowse`, `loadHistory`, `loadSettings`) called when the view is shown.
+- The Browse view is rooted to the configured download directory. `browse_photos` returns only one folder level at a time and only uses already-cached thumbnails so navigation does not block on thumbnail generation.
+- Thumbnail rendering is shared between recently synced assets and Browse. Keep Live Photo pairing, video hover playback, lightbox arrow keys, and open-containing-folder behavior consistent between both surfaces.
 - The sync log uses the parser registry in `src/log-parsers.js` — add new parsers there, not in `app.js`.
+- kei `--friendly` progress output is parsed into the progress card and final statistics. Preserve raw logs while improving progress UI.
 - CSS variables are defined on `:root` for light mode and overridden in `@media (prefers-color-scheme: dark)`.
 - Visibility is controlled with `.hidden` class (never inline `style="display:none"`).
 

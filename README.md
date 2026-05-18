@@ -15,9 +15,11 @@ The kei binary is bundled inside the app — end users do not need to install it
 | Linux | Supported; native window decorations |
 
 
-## 🖥️ Installing the macOS App
+## Installing the macOS App
 
-The macOS build is not notarized, so Gatekeeper will block it on first launch. To open it anyway:
+Tagged GitHub releases build a signed and notarized universal macOS app. The release workflow signs and notarizes the `.app`, creates a plain DMG with `hdiutil`, then signs, notarizes, and staples that DMG. The DMG intentionally does not use Tauri's fancy Finder layout script because that step is fragile in CI.
+
+If you build locally without Apple signing credentials, Gatekeeper may still block the app on first launch. To open a local unsigned build anyway:
 
 **Option 1 — System Settings**
 1. Try to open the app normally — it will be blocked
@@ -36,19 +38,19 @@ xattr -cr "/Applications/Kei PhotoSync.app"
 - On macOS: Xcode Command Line Tools (`xcode-select --install`)
 - On Linux: `libwebkit2gtk`, `libgtk-3`, `libayatana-appindicator3` (see [Tauri Linux dependencies](https://tauri.app/start/prerequisites/#linux))
 
-kei itself is downloaded automatically by `pnpm run prepare-sidecar` — no separate installation needed.
+kei itself is downloaded automatically by `npm run prepare-sidecar` — no separate installation needed.
 
 ## Quick start
 
 ```bash
 # Install JS dependencies
-pnpm install
+npm install
 
 # Download the latest kei release from GitHub into src-tauri/binaries/
-pnpm run prepare-sidecar
+npm run prepare-sidecar
 
 # Launch in development mode
-pnpm run dev
+npm run dev
 ```
 
 The first build takes a few minutes (Tauri compiles the WebView bindings). Subsequent runs are fast.
@@ -66,14 +68,34 @@ git commit -m "update kei sidecar to vX.Y.Z"
 ## Building for distribution
 
 ```bash
-pnpm run prepare-sidecar   # ensure sidecar is up to date
-pnpm run build
+npm run prepare-sidecar   # ensure sidecar is up to date
+npm run build
 ```
 
 Output locations:
 - macOS: `src-tauri/target/release/bundle/macos/Kei PhotoSync.app`
 - Windows: `src-tauri/target/release/bundle/msi/` or `nsis/`
 - Linux: `src-tauri/target/release/bundle/deb/` or `appimage/`
+
+## Release CI
+
+`.github/workflows/build.yml` builds macOS, Windows, and Linux on `v*` tags and creates a draft GitHub Release.
+
+macOS release signing expects these GitHub secrets:
+
+| Secret | Meaning |
+|---|---|
+| `APPLE_CERTIFICATE` | Base64-encoded Developer ID Application `.p12` certificate with private key |
+| `APPLE_CERTIFICATE_PASSWORD` | Password for that `.p12` file |
+| `APPLE_ID` | Apple ID email used for notarization |
+| `APPLE_PASSWORD` | Apple app-specific password, not the normal Apple ID password |
+| `APPLE_TEAM_ID` | 10-character Apple Developer Team ID |
+
+If the `.p12` was exported with legacy encryption and OpenSSL reports `Algorithm (RC2-40-CBC) unsupported`, convert it locally to a modern `.p12` before updating `APPLE_CERTIFICATE`.
+
+Tauri's Rust crate and npm packages must stay on the same major/minor version. For example, Rust `tauri 2.11.x` must be paired with `@tauri-apps/api 2.11.x`. The Tauri npm packages are pinned exactly in `package.json` to make Dependabot version drift obvious.
+
+When release, signing, dependency, or workflow behavior changes, update both `README.md` and `agents/AGENTS.md` in the same change.
 
 ## Project structure
 
@@ -104,10 +126,10 @@ Kei PhotoSync/
 
 | View | What it shows |
 |---|---|
-| **Dashboard** | Asset counts (downloaded / pending / failed / total) and last sync run summary, read from kei's SQLite DB |
-| **Sync** | Start/Stop button, live streaming log with structured formatting, indeterminate progress bar, automatic 2FA prompt dialog |
-| **History** | Table of the last 100 sync runs with duration and status |
-| **Settings** | Form that reads and writes the kei config file |
+| **Sync** | Start/Stop button, kei friendly progress UI, expandable compact/full logs, recent thumbnail strip, and automatic password/2FA prompts |
+| **Browse** | Folder browser rooted at the configured download directory, with cached thumbnails, video previews, Live Photo pairing, breadcrumbs, and Finder/File Explorer open actions |
+| **History** | Table of the last 100 sync runs with duration and status, plus clear-history/statistics action |
+| **Settings** | Form that reads and writes the kei config file, including selectable albums and Apple smart folders |
 
 ## Backend commands
 
@@ -130,6 +152,11 @@ All backend logic lives in [src-tauri/src/main.rs](src-tauri/src/main.rs).
 | `submit_2fa` | Runs `kei login submit-code <CODE>` as a separate process |
 | `clear_kei_session` | Deletes kei session/cookie files to force re-authentication |
 | `list_kei_albums` | Runs `kei list albums` and returns the album names |
+| `list_kei_smart_folders` | Runs kei and returns available Apple smart folders |
+| `browse_photos` | Lists one folder level from the configured download root, returning child folders and direct media assets |
+| `get_recent_downloads` | Returns up to 100 recently downloaded media assets with cached thumbnails and Live Photo pairing |
+| `open_folder` | Opens a folder in the system file manager |
+| `open_containing_folder` | Opens the containing folder for a media file |
 
 ## kei data locations
 
@@ -181,9 +208,9 @@ npx tauri icon path/to/your-icon.png
 
 ## Troubleshooting
 
-**kei not found** — Run `pnpm run prepare-sidecar`. If kei itself is missing, install it with `cargo install kei` first.
+**kei not found** — Run `npm run prepare-sidecar`. If kei itself is missing, install it with `cargo install kei` first.
 
-**No data in Dashboard** — kei creates its SQLite database only after the first successful sync. Run `kei sync` once from the terminal to initialise it, or use the Sync view.
+**No data in Sync statistics** — kei creates its SQLite database only after the first successful sync. Run `kei sync` once from the terminal to initialise it, or use the Sync view.
 
 **Advanced Data Protection (ADP)** — kei cannot sync if ADP is enabled on your iCloud account. Disable it in System Settings → Apple ID → iCloud → Advanced Data Protection.
 
