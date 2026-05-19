@@ -1,8 +1,0 @@
-[Desktop Entry]
-Name=Kei PhotoSync
-Comment=Synchronize your iCloud photos to your own machine
-Exec=kei-photosync
-Icon=com.kei.photosync
-Terminal=false
-Type=Application
-Categories=Graphics;Photography;

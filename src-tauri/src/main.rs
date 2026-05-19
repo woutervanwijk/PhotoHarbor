@@ -729,7 +729,7 @@ async fn list_kei_smart_folders() -> Result<Vec<String>, String> {
     };
 
     let config_path = std::env::temp_dir().join(format!(
-        "kei-photosync-smart-folders-{}-{}.toml",
+        "photoharbor-smart-folders-{}-{}.toml",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -743,7 +743,7 @@ username = "probe@example.com"
 directory = "/tmp"
 
 [filters]
-smart_folders = ["__kei_photosync_probe__"]
+smart_folders = ["__photoharbor_probe__"]
 "#;
 
     if std::fs::write(&config_path, config).is_err() {
@@ -1561,7 +1561,7 @@ fn thumbnail_cache_dir() -> Option<std::path::PathBuf> {
             std::path::PathBuf::from(home)
                 .join("Library")
                 .join("Caches")
-                .join("Kei PhotoSync")
+                .join("PhotoHarbor")
                 .join("thumbnails"),
         )
     }
@@ -1570,7 +1570,7 @@ fn thumbnail_cache_dir() -> Option<std::path::PathBuf> {
         Some(
             std::path::PathBuf::from(home)
                 .join(".cache")
-                .join("kei-photosync")
+                .join("photoharbor")
                 .join("thumbnails"),
         )
     }
@@ -1840,7 +1840,7 @@ fn app_settings_path() -> Result<std::path::PathBuf, String> {
         .map_err(|_| "HOME not set".to_string())?;
     Ok(std::path::PathBuf::from(home)
         .join(".config")
-        .join("kei-photosync")
+        .join("photoharbor")
         .join("settings.toml"))
 }
 
@@ -2094,5 +2094,5 @@ fn main() {
             open_containing_folder,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Kei PhotoSync");
+        .expect("error while running PhotoHarbor");
 }

@@ -1,10 +1,12 @@
-# Claude agent guide — Kei PhotoSync
+# Claude agent guide — PhotoHarbor
 
 This document gives an AI agent the context needed to work in this repo confidently.
 
 ## What this project is
 
-A Tauri v2 cross-platform desktop GUI that wraps the [kei](https://github.com/rhoopr/kei) iCloud photo sync CLI. The GUI does not contain any sync logic — it spawns the kei binary, streams its output, and reads/writes its config and SQLite database.
+PhotoHarbor is a Cloud Photo Downloader for macOS, Windows, and Linux. It downloads iCloud Photos to a local folder, including albums, Apple smart folders, Live Photos, browsing downloaded files, and sync history.
+
+Under the hood, it is a Tauri v2 cross-platform desktop GUI that wraps the [kei](https://github.com/rhoopr/kei) iCloud photo sync CLI. The GUI does not contain any sync logic — it spawns the kei binary, streams its output, and reads/writes its config and SQLite database.
 
 **Supported platforms:** macOS (primary), Windows 10+, Linux.
 
@@ -82,7 +84,7 @@ There is exactly one `AppState` instance, registered with `.manage()` at startup
 
 ### AppSettings vs KeiConfig
 
-`KeiConfig` maps directly to kei's `config.toml` and is read/written by the kei binary itself. `AppSettings` is a separate file (`~/.config/kei-photosync/settings.toml`) that holds UI preferences such as `use_system_kei`, `all_albums`, and legacy folder-template fallbacks. Kei v0.13 stores unfiled, album, and smart-folder templates as `[download].folder_structure`, `[download].folder_structure_albums`, and `[download].folder_structure_smart_folders`; sync launch also passes those values with the matching v0.13 CLI flags.
+`KeiConfig` maps directly to kei's `config.toml` and is read/written by the kei binary itself. `AppSettings` is a separate file (`~/.config/photoharbor/settings.toml`) that holds UI preferences such as `use_system_kei`, `all_albums`, and legacy folder-template fallbacks. Kei v0.13 stores unfiled, album, and smart-folder templates as `[download].folder_structure`, `[download].folder_structure_albums`, and `[download].folder_structure_smart_folders`; sync launch also passes those values with the matching v0.13 CLI flags.
 
 ### Tauri events emitted from Rust → JS
 

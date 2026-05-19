@@ -1741,20 +1741,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "kei-photosync"
-version = "0.14.2"
-dependencies = [
- "rusqlite",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tokio",
- "toml 0.8.23",
-]
-
-[[package]]
 name = "keyboard-types"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2490,6 +2476,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e57fef6bc5981e38c2ce2d63bfa546861309f875b8a75f092d1d54ae2d64f266"
 dependencies = [
  "siphasher 1.0.2",
+]
+
+[[package]]
+name = "photoharbor"
+version = "0.14.2"
+dependencies = [
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tokio",
+ "toml 0.8.23",
 ]
 
 [[package]]

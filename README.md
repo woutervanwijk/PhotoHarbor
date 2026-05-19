@@ -1,10 +1,8 @@
-# Kei PhotoSync
+# PhotoHarbor
 
-A native desktop GUI for [kei](https://github.com/rhoopr/kei), the iCloud photo sync CLI tool written in Rust.
+Cloud Photo Downloader for macOS, Windows, and Linux.
 
-This app does **not** modify kei's source. It wraps the existing binary: spawning it as a child process, streaming its output, reading and writing its TOML config, and querying its SQLite state database.
-
-The kei binary is bundled inside the app — end users do not need to install it separately.
+Download your iCloud Photos to your own computer. PhotoHarbor copies photos and videos from iCloud Photos to a local folder, with support for albums, Apple smart folders, Live Photos, browsing downloaded files, and sync history. Based on the [kei](https://github.com/rhoopr/kei) sync engine.
 
 ## Supported platforms
 
@@ -13,7 +11,6 @@ The kei binary is bundled inside the app — end users do not need to install it
 | macOS 13+ | Primary target; native overlay title bar |
 | Windows 10+ | Supported; native window decorations |
 | Linux | Supported; native window decorations |
-
 
 ## Installing the macOS App
 
@@ -28,7 +25,7 @@ If you build locally without Apple signing credentials, Gatekeeper may still blo
 
 **Option 2 — Terminal (removes the quarantine flag permanently)**
 ```bash
-xattr -cr "/Applications/Kei PhotoSync.app"
+xattr -cr "/Applications/PhotoHarbor.app"
 ```
 
 ## Requirements (for building from source)
@@ -73,7 +70,7 @@ npm run build
 ```
 
 Output locations:
-- macOS: `src-tauri/target/release/bundle/macos/Kei PhotoSync.app`
+- macOS: `src-tauri/target/release/bundle/macos/PhotoHarbor.app`
 - Windows: `src-tauri/target/release/bundle/msi/` or `nsis/`
 - Linux: `src-tauri/target/release/bundle/deb/` or `appimage/`
 
@@ -100,7 +97,7 @@ When release, signing, dependency, or workflow behavior changes, update both `RE
 ## Project structure
 
 ```
-Kei PhotoSync/
+PhotoHarbor/
 ├── index.html              # App shell — sidebar + 4 views + modals
 ├── scripts/
 │   ├── prepare-sidecar.js  # Downloads kei binary into src-tauri/binaries/

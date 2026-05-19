@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=PhotoHarbor
+Comment=Cloud Photo Downloader for macOS, Windows, and Linux
+Exec=photoharbor
+Icon=com.photoharbor.app
+Terminal=false
+Type=Application
+Categories=Graphics;Photography;

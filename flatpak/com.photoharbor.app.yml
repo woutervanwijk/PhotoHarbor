@@ -1,8 +1,8 @@
-app-id: com.kei.photosync
+app-id: com.photoharbor.app
 runtime: org.gnome.Platform
 runtime-version: '47'
 sdk: org.gnome.Sdk
-command: kei-photosync
+command: photoharbor
 finish-args:
   - --share=network
   - --share=ipc
@@ -13,20 +13,20 @@ finish-args:
   - --talk-name=org.freedesktop.Notifications
 
 modules:
-  - name: kei-photosync
+  - name: photoharbor
     buildsystem: simple
     build-commands:
-      - install -Dm755 kei-photosync /app/bin/kei-photosync
+      - install -Dm755 photoharbor /app/bin/photoharbor
       - install -Dm755 kei-x86_64-unknown-linux-gnu /app/bin/kei-x86_64-unknown-linux-gnu
-      - install -Dm644 com.kei.photosync.desktop /app/share/applications/com.kei.photosync.desktop
-      - install -Dm644 icon.png /app/share/icons/hicolor/512x512/apps/com.kei.photosync.png
+      - install -Dm644 com.photoharbor.app.desktop /app/share/applications/com.photoharbor.app.desktop
+      - install -Dm644 icon.png /app/share/icons/hicolor/512x512/apps/com.photoharbor.app.png
     sources:
       - type: file
-        path: ../build-staging/kei-photosync
+        path: ../build-staging/photoharbor
       - type: file
         path: ../build-staging/kei-x86_64-unknown-linux-gnu
       - type: file
-        path: com.kei.photosync.desktop
+        path: com.photoharbor.app.desktop
       - type: file
         path: ../src-tauri/icons/128x128.png
         dest-filename: icon.png

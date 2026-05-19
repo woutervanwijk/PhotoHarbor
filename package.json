@@ -1,7 +1,7 @@
 {
-  "name": "kei-photosync",
+  "name": "photoharbor",
   "version": "0.14.2",
-  "description": "GUI for the kei iCloud photo sync tool",
+  "description": "Cloud Photo Downloader for macOS, Windows, and Linux",
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",

@@ -150,7 +150,7 @@ let _thumbLoadGeneration = 0;
 let _videoThumbObserver = null;
 
 function recentClearStorageKey(directory) {
-  return `kei-photosync:recent-cleared-before:${directory}`;
+  return `photoharbor:recent-cleared-before:${directory}`;
 }
 
 function getRecentClearCutoff(directory) {

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Cross-compile a Windows .exe on macOS using cargo-xwin + LLVM.
-# Produces: src-tauri/target/x86_64-pc-windows-msvc/release/kei-photosync.exe
+# Produces: src-tauri/target/x86_64-pc-windows-msvc/release/photoharbor.exe
 #
 # First-time setup (run once):
 #   brew install llvm
@@ -48,6 +48,6 @@ echo "── Cross-compiling for Windows..."
 cd src-tauri
 cargo xwin build --target "$TARGET" --release
 
-EXE="$ROOT/src-tauri/target/$TARGET/release/kei-photosync.exe"
+EXE="$ROOT/src-tauri/target/$TARGET/release/photoharbor.exe"
 echo ""
 echo "Done: $EXE"

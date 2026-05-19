@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2/capability",
   "identifier": "default",
-  "description": "Default capabilities for Kei PhotoSync",
+  "description": "Default capabilities for PhotoHarbor",
   "windows": ["main"],
   "permissions": [
     "core:default",

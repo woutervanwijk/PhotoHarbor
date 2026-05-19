@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Kei PhotoSync",
+  "productName": "PhotoHarbor",
   "version": "0.14.2",
-  "identifier": "com.kei.photosync",
+  "identifier": "com.photoharbor.app",
   "build": {
     "beforeDevCommand": "npm run prepare-sidecar && npm run vite:dev",
     "beforeBuildCommand": "npm run prepare-sidecar && npm run vite:build",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Kei PhotoSync",
+        "title": "PhotoHarbor",
         "width": 960,
         "height": 640,
         "minWidth": 800,

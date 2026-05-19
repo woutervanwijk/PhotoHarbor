@@ -70,7 +70,7 @@ function getTargetTriple() {
 function fetchJson(url) {
   return new Promise((resolve, reject) => {
     const opts = new URL(url);
-    opts.headers = { "User-Agent": "kei-photosync-prepare-script" };
+    opts.headers = { "User-Agent": "photoharbor-prepare-script" };
     if (process.env.GITHUB_TOKEN) {
       opts.headers["Authorization"] = `Bearer ${process.env.GITHUB_TOKEN}`;
     }
@@ -94,7 +94,7 @@ function download(url, dest) {
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(dest);
     function get(u) {
-      https.get(u, { headers: { "User-Agent": "kei-photosync-prepare-script" } }, (res) => {
+      https.get(u, { headers: { "User-Agent": "photoharbor-prepare-script" } }, (res) => {
         if (res.statusCode === 302 || res.statusCode === 301) {
           return get(res.headers.location);
         }
