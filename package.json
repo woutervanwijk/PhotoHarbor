@@ -1,6 +1,6 @@
 {
   "name": "photoharbor",
-  "version": "0.14.2",
+  "version": "0.20.4",
   "description": "Cloud Photo Downloader for macOS, Windows, and Linux",
   "scripts": {
     "tauri": "tauri",

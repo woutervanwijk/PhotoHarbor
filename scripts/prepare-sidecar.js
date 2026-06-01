@@ -143,11 +143,17 @@ function extract(archivePath, ext, outDir) {
   const destBin = targetIsWindows ? `kei-${triple}.exe` : `kei-${triple}`;
   const destPath = path.join(BIN_DIR, destBin);
 
-  // Check if already up-to-date (unless --force)
+  // Check if already up-to-date (unless --force). If the version pin was
+  // changed after this binary was created, re-download the target binary.
   if (!force && fs.existsSync(destPath)) {
-    console.log(`Sidecar already present: ${destPath}`);
-    console.log("Run with --force to re-download.");
-    return;
+    const pinIsNewer = fs.existsSync(VERSION_FILE)
+      && fs.statSync(VERSION_FILE).mtimeMs > fs.statSync(destPath).mtimeMs + 1000;
+    if (!pinIsNewer) {
+      console.log(`Sidecar already present: ${destPath}`);
+      console.log("Run with --force to re-download.");
+      return;
+    }
+    console.log(`Sidecar is older than ${VERSION_FILE}; re-downloading ${destBin}.`);
   }
 
   console.log(`Target triple: ${triple}`);

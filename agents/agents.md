@@ -10,7 +10,7 @@ Under the hood, it is a Tauri v2 cross-platform desktop GUI that wraps the [kei]
 
 **Supported platforms:** macOS (primary), Windows 10+, Linux.
 
-**Rule:** never modify kei's source or vendor it. All behaviour changes go through the GUI layer or by passing CLI flags to the kei binary.
+**Rule:** never modify kei's source or vendor it. Durable sync behaviour goes through kei's TOML config; only pass CLI flags that are still listed by the bundled `kei sync --help`.
 
 ## Tech stack
 
@@ -84,7 +84,7 @@ There is exactly one `AppState` instance, registered with `.manage()` at startup
 
 ### AppSettings vs KeiConfig
 
-`KeiConfig` maps directly to kei's `config.toml` and is read/written by the kei binary itself. `AppSettings` is a separate file (`~/.config/photoharbor/settings.toml`) that holds UI preferences such as `use_system_kei`, `all_albums`, and legacy folder-template fallbacks. Kei v0.13 stores unfiled, album, and smart-folder templates as `[download].folder_structure`, `[download].folder_structure_albums`, and `[download].folder_structure_smart_folders`; sync launch also passes those values with the matching v0.13 CLI flags.
+`KeiConfig` maps directly to kei's `config.toml` and is read/written by the kei binary itself. `AppSettings` is a separate file (`~/.config/photoharbor/settings.toml`) that holds UI preferences such as `use_system_kei`, `all_albums`, and legacy folder-template fallbacks. kei v0.20 keeps durable sync settings in TOML: folder templates live under `[download]`, album/smart-folder/library selectors live under `[filters]`, media filtering is `[filters].media`, retry limits are `[download.retry].per_asset`, and EXIF metadata toggles live under `[metadata]`. `start_sync` should only pass one-run flags that still exist in `kei sync --help` such as `--friendly`, `--recent`, `--dry-run`, or `--retry-failed`.
 
 ### Tauri events emitted from Rust → JS
 
@@ -118,7 +118,7 @@ The kei binary is bundled using Tauri's `externalBin` mechanism. Before building
 npm run prepare-sidecar
 ```
 
-This downloads the pinned kei release (from `src-tauri/binaries/.kei-version`) to `src-tauri/binaries/kei-<target-triple>[.exe]`. The binaries themselves are gitignored; the version file is committed. Pass `--force` to fetch latest and update the pin.
+This downloads the pinned kei release (from `src-tauri/binaries/.kei-version`) to `src-tauri/binaries/kei-<target-triple>[.exe]`. The binaries themselves are gitignored; the version file is committed. Pass `--force` to fetch latest and update the pin. If the pin file is newer than an existing sidecar, the script re-downloads that sidecar.
 
 To update kei: `node scripts/prepare-sidecar.js --force`, then commit `.kei-version`.
 
@@ -186,8 +186,9 @@ The GUI never writes to the database.
 KeiConfig {
     log_level: Option<String>,
     auth:     Option<AuthConfig>,      // username, domain
-    download: Option<DownloadConfig>,  // directory, threads_num, folder structures, retry, set_exif_datetime
-    filters:  Option<FiltersConfig>,   // skip_videos, skip_photos, libraries, albums, smart_folders, unfiled, recent
+    download: Option<DownloadConfig>,  // directory, threads, folder structures, retry
+    metadata: Option<MetadataConfig>,  // EXIF/XMP metadata toggles
+    filters:  Option<FiltersConfig>,   // libraries, albums, smart_folders, unfiled, media, recent
     watch:    Option<WatchConfig>,     // interval
 }
 ```

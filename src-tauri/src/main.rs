@@ -15,9 +15,11 @@ use tokio::sync::Mutex;
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct KeiConfig {
+    pub data_dir: Option<String>,
     pub log_level: Option<String>,
     pub auth: Option<AuthConfig>,
     pub download: Option<DownloadConfig>,
+    pub metadata: Option<MetadataConfig>,
     pub filters: Option<FiltersConfig>,
     pub watch: Option<WatchConfig>,
 }
@@ -31,28 +33,45 @@ pub struct AuthConfig {
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct DownloadConfig {
     pub directory: Option<String>,
-    pub threads_num: Option<u32>,
+    #[serde(alias = "threads_num")]
+    pub threads: Option<u32>,
     pub folder_structure: Option<String>,
     pub folder_structure_albums: Option<String>,
     pub folder_structure_smart_folders: Option<String>,
+    #[serde(default, skip_serializing)]
     pub set_exif_datetime: Option<bool>,
     pub retry: Option<DownloadRetryConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct DownloadRetryConfig {
-    pub max_download_attempts: Option<u32>,
+    pub per_transfer: Option<u32>,
+    #[serde(alias = "max_download_attempts")]
+    pub per_asset: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+pub struct MetadataConfig {
+    pub set_exif_datetime: Option<bool>,
+    pub set_exif_rating: Option<bool>,
+    pub set_exif_gps: Option<bool>,
+    pub set_exif_description: Option<bool>,
+    pub embed_xmp: Option<bool>,
+    pub xmp_sidecar: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct FiltersConfig {
+    #[serde(default, skip_serializing)]
     pub skip_videos: Option<bool>,
+    #[serde(default, skip_serializing)]
     pub skip_photos: Option<bool>,
     pub libraries: Option<Vec<String>>,
     pub albums: Option<Vec<String>>,
     pub exclude_albums: Option<Vec<String>>,
     pub smart_folders: Option<Vec<String>>,
     pub unfiled: Option<bool>,
+    pub media: Option<Vec<String>>,
     pub recent: Option<u32>,
 }
 
@@ -411,12 +430,14 @@ async fn get_config() -> Result<KeiConfig, String> {
         return Ok(KeiConfig::default());
     }
     let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    toml::from_str(&content).map_err(|e| e.to_string())
+    let mut config: KeiConfig = toml::from_str(&content).map_err(|e| e.to_string())?;
+    normalize_v020_config(&mut config);
+    Ok(config)
 }
 
 #[tauri::command]
 async fn save_config(mut config: KeiConfig) -> Result<(), String> {
-    normalize_v013_filters(&mut config);
+    normalize_v020_config(&mut config);
     let path = config_path()?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -425,13 +446,21 @@ async fn save_config(mut config: KeiConfig) -> Result<(), String> {
     write_text_if_changed(&path, &content)
 }
 
-fn normalize_v013_filters(config: &mut KeiConfig) {
+fn normalize_v020_config(config: &mut KeiConfig) {
+    if let Some(download) = config.download.as_mut() {
+        if let Some(set_exif_datetime) = download.set_exif_datetime.take() {
+            let metadata = config.metadata.get_or_insert_with(MetadataConfig::default);
+            if metadata.set_exif_datetime.is_none() {
+                metadata.set_exif_datetime = Some(set_exif_datetime);
+            }
+        }
+    }
+
     let Some(filters) = config.filters.as_mut() else {
         return;
     };
 
     let mut albums = filters.albums.take().unwrap_or_default();
-    albums.retain(|album| !album.eq_ignore_ascii_case("all"));
 
     if let Some(exclude_albums) = filters.exclude_albums.take() {
         albums.extend(
@@ -453,6 +482,25 @@ fn normalize_v013_filters(config: &mut KeiConfig) {
     } else {
         Some(albums)
     };
+
+    if filters.media.is_none() {
+        let skip_photos = filters.skip_photos.unwrap_or(false);
+        let skip_videos = filters.skip_videos.unwrap_or(false);
+
+        if skip_photos || skip_videos {
+            let mut media = Vec::new();
+            if !skip_photos {
+                media.push("photos".to_string());
+            }
+            if !skip_videos {
+                media.push("videos".to_string());
+            }
+            if !skip_photos && !skip_videos {
+                media.push("live-photos".to_string());
+            }
+            filters.media = Some(media);
+        }
+    }
 }
 
 #[tauri::command]
@@ -863,56 +911,6 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
     let kei_bin = resolve_kei_bin().await?;
     let app_settings = get_app_settings().await.unwrap_or_default();
 
-    // If kei's TOML still has albums=["all"] from a previous save, strip it out
-    // so kei doesn't try to find a literal album named "all".
-    let kei_cfg = get_config().await.unwrap_or_default();
-    let toml_had_all = kei_cfg
-        .filters
-        .as_ref()
-        .and_then(|f| f.albums.as_ref())
-        .is_some_and(|albums| albums.iter().any(|a| a.eq_ignore_ascii_case("all")));
-
-    if toml_had_all {
-        let mut clean = kei_cfg.clone();
-        if let Some(ref mut f) = clean.filters {
-            let retained = f
-                .albums
-                .take()
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|a| !a.eq_ignore_ascii_case("all"))
-                .collect::<Vec<_>>();
-            f.albums = if retained.is_empty() {
-                None
-            } else {
-                Some(retained)
-            };
-        }
-        if let (Ok(path), Ok(content)) = (config_path(), toml::to_string_pretty(&clean)) {
-            let _ = write_text_if_changed(&path, &content);
-        }
-    }
-
-    // Compute folder templates from AppSettings / config; passed as CLI
-    // arg so we never touch kei's config.toml (which would trigger "Config changed
-    // — verifying all files" on every sync due to TOML serialization differences).
-    let config_download = kei_cfg.download.as_ref();
-    let kei_folder_structure = app_settings.folder_structure.as_deref();
-    let kei_folder_structure = config_download
-        .and_then(|d| d.folder_structure.as_deref())
-        .or(kei_folder_structure)
-        .unwrap_or("%Y/%m");
-    let kei_album_folder_structure_fallback = app_settings.album_folder_structure.as_deref();
-    let kei_album_folder_structure = config_download
-        .and_then(|d| d.folder_structure_albums.as_deref())
-        .or(kei_album_folder_structure_fallback)
-        .unwrap_or("{album}");
-    let kei_smart_folder_structure_fallback = app_settings.smart_folder_structure.as_deref();
-    let kei_smart_folder_structure = config_download
-        .and_then(|d| d.folder_structure_smart_folders.as_deref())
-        .or(kei_smart_folder_structure_fallback)
-        .unwrap_or("{smart-folder}");
-
     // Clear any stale lock file left by a previous hard-quit before launching kei.
     // This avoids the "Session lock held by another instance" error on restart.
     if delete_kei_lock().await {
@@ -923,18 +921,6 @@ async fn start_sync(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
 
     let mut cmd = Command::new(&kei_bin);
     cmd.arg("sync");
-    if !kei_folder_structure.is_empty() {
-        cmd.args(["--folder-structure", &kei_folder_structure]);
-    }
-    if !kei_album_folder_structure.is_empty() {
-        cmd.args(["--folder-structure-albums", &kei_album_folder_structure]);
-    }
-    if !kei_smart_folder_structure.is_empty() {
-        cmd.args([
-            "--folder-structure-smart-folders",
-            &kei_smart_folder_structure,
-        ]);
-    }
     if let Some(extra) = &app_settings.extra_args {
         cmd.args(extra.split_whitespace());
     }
@@ -1819,8 +1805,8 @@ async fn browse_photos(
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct AppSettings {
     pub use_system_kei: Option<bool>,
-    /// When true, passes `-a all` to `kei sync` rather than storing ["all"] in
-    /// kei's TOML (which kei interprets as a literal album name and errors).
+    /// UI preference for the "all albums" selector; kei v0.20 stores this as
+    /// `[filters].albums = ["all"]` in TOML.
     pub all_albums: Option<bool>,
     /// Base folder structure pattern for non-album photos (e.g. "%Y/%m").
     pub folder_structure: Option<String>,

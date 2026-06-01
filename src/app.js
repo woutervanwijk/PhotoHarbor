@@ -1616,6 +1616,27 @@ document.getElementById("cfg-smart-folders-refresh").addEventListener("click", (
 // Settings view
 // ---------------------------------------------------------------------------
 
+function mediaSelectionFromConfig(cfg = {}) {
+  const media = cfg.filters?.media;
+  if (Array.isArray(media)) {
+    return {
+      photos: media.includes("photos") || media.includes("live-photos"),
+      videos: media.includes("videos") || media.includes("live-photos"),
+    };
+  }
+  return {
+    photos: cfg.filters?.skip_photos !== true,
+    videos: cfg.filters?.skip_videos !== true,
+  };
+}
+
+function mediaFilterFromSelection({ photos, videos }) {
+  if (photos && videos) return null;
+  if (photos) return ["photos"];
+  if (videos) return ["videos"];
+  return [];
+}
+
 async function loadSettings() {
   try {
     const [cfg, appSettings] = await Promise.all([
@@ -1627,7 +1648,7 @@ async function loadSettings() {
     document.getElementById("cfg-domain").value = cfg.auth?.domain ?? "com";
     document.getElementById("cfg-libraries").value = (cfg.filters?.libraries ?? []).join(", ");
     document.getElementById("cfg-directory").value = cfg.download?.directory ?? "";
-    document.getElementById("cfg-threads").value = cfg.download?.threads_num ?? "";
+    document.getElementById("cfg-threads").value = cfg.download?.threads ?? "";
     // Folder structure for the unfiled pass; AppSettings is a legacy fallback.
     const folderStructureVal = cfg.download?.folder_structure ?? appSettings.folder_structure ?? "%Y/%m";
     const folderSelect = document.getElementById("cfg-folder-structure-select");
@@ -1665,11 +1686,12 @@ async function loadSettings() {
       document.getElementById("cfg-smart-folder-structure").value = smartFolderVal;
       document.getElementById("cfg-smart-folder-structure-custom-row").classList.remove("hidden");
     }
-    document.getElementById("cfg-exif").checked = cfg.download?.set_exif_datetime ?? false;
-    document.getElementById("cfg-skip-videos").checked = cfg.filters?.skip_videos ?? false;
-    document.getElementById("cfg-skip-photos").checked = cfg.filters?.skip_photos ?? false;
+    document.getElementById("cfg-exif").checked = cfg.metadata?.set_exif_datetime ?? false;
+    const mediaSelection = mediaSelectionFromConfig(cfg);
+    document.getElementById("cfg-skip-videos").checked = !mediaSelection.videos;
+    document.getElementById("cfg-skip-photos").checked = !mediaSelection.photos;
 
-    // v0.13 stores album exclusions inline as "!Name"; legacy configs may still
+    // kei stores album exclusions inline as "!Name"; legacy configs may still
     // carry exclude_albums or albums=["all"].
     const albumFilters = cfg.filters?.albums ?? [];
     const includedAlbums = albumFilters.filter((a) => !a.startsWith("!") && a.toLowerCase() !== "all");
@@ -1692,7 +1714,7 @@ async function loadSettings() {
     document.getElementById("cfg-recent").value = cfg.filters?.recent ?? "";
     document.getElementById("cfg-watch-interval").value = cfg.watch?.interval ?? "";
     document.getElementById("cfg-log-level").value = cfg.log_level ?? "";
-    document.getElementById("cfg-max-download-attempts").value = cfg.download?.retry?.max_download_attempts ?? "";
+    document.getElementById("cfg-max-download-attempts").value = cfg.download?.retry?.per_asset ?? "";
 
     const useSystem = appSettings.use_system_kei ?? false;
     document.getElementById("cfg-use-system-kei").checked = useSystem;
@@ -1774,9 +1796,8 @@ let wizardSaving = false;
 function configNeedsSetup(cfg) {
   const hasUsername = !!cfg.auth?.username?.trim?.();
   const hasDirectory = !!cfg.download?.directory?.trim?.();
-  const skipsPhotos = cfg.filters?.skip_photos === true;
-  const skipsVideos = cfg.filters?.skip_videos === true;
-  return !hasUsername || !hasDirectory || (skipsPhotos && skipsVideos);
+  const mediaSelection = mediaSelectionFromConfig(cfg);
+  return !hasUsername || !hasDirectory || (!mediaSelection.photos && !mediaSelection.videos);
 }
 
 function setWizardError(message) {
@@ -1816,8 +1837,9 @@ function showSetupWizard(cfg = {}) {
   document.getElementById("wizard-directory").value = cfg.download?.directory ?? "";
   document.getElementById("wizard-folder-structure").value = cfg.download?.folder_structure ?? "%Y/%m";
   document.getElementById("wizard-unfiled").checked = cfg.filters?.unfiled ?? true;
-  document.getElementById("wizard-photos").checked = !(cfg.filters?.skip_photos === true);
-  document.getElementById("wizard-videos").checked = !(cfg.filters?.skip_videos === true);
+  const mediaSelection = mediaSelectionFromConfig(cfg);
+  document.getElementById("wizard-photos").checked = mediaSelection.photos;
+  document.getElementById("wizard-videos").checked = mediaSelection.videos;
   const albumFilters = cfg.filters?.albums ?? [];
   const hasSpecificAlbums = albumFilters.some((album) => !album.startsWith("!") && album.toLowerCase() !== "all");
   document.getElementById("wizard-all-albums").checked = !hasSpecificAlbums;
@@ -1855,21 +1877,20 @@ async function saveWizardSettings() {
     },
     download: {
       directory,
-      threads_num: null,
+      threads: null,
       folder_structure: folderStructure || null,
       folder_structure_albums: "{album}",
       folder_structure_smart_folders: "{smart-folder}",
-      set_exif_datetime: null,
       retry: null,
     },
+    metadata: null,
     filters: {
-      skip_videos: videos ? null : true,
-      skip_photos: photos ? null : true,
       libraries: null,
-      albums: null,
+      albums: allAlbums ? ["all"] : null,
       exclude_albums: null,
       smart_folders: null,
       unfiled: unfiled ? null : false,
+      media: mediaFilterFromSelection({ photos, videos }),
       recent: null,
     },
     watch: { interval: null },
@@ -1971,11 +1992,15 @@ async function saveSettings() {
   const setExif = document.getElementById("cfg-exif").checked;
   const skipVideos = document.getElementById("cfg-skip-videos").checked;
   const skipPhotos = document.getElementById("cfg-skip-photos").checked;
+  if (skipVideos && skipPhotos) {
+    alert("Enable photos, videos, or both.");
+    return;
+  }
   const albumsAll = document.getElementById("cfg-albums-all").checked;
-  // v0.13 stores exclusions inline: albums = ["!Screenshots"] means all albums except Screenshots.
+  // kei stores exclusions inline: albums = ["!Screenshots"] means all albums except Screenshots.
   const excludeAlbums = getExcludeAlbums().length > 0 ? getExcludeAlbums() : null;
   const albums = albumsAll
-    ? (excludeAlbums ? excludeAlbums.map((album) => `!${album}`) : null)
+    ? (excludeAlbums ? excludeAlbums.map((album) => `!${album}`) : ["all"])
     : (getSelectedAlbums().length > 0 ? getSelectedAlbums() : null);
   const selectedSmartFolders = getSelectedSmartFolders();
   const smartFolders = selectedSmartFolders.length > 0 ? selectedSmartFolders : null;
@@ -1995,23 +2020,24 @@ async function saveSettings() {
     },
     download: {
       directory: directory || null,
-      threads_num: isNaN(threads) ? null : threads,
+      threads: isNaN(threads) ? null : threads,
       folder_structure: folderStructureBase || null,
       folder_structure_albums: albumFolderStructure || null,
       folder_structure_smart_folders: smartFolderStructure || null,
-      set_exif_datetime: setExif || null,
       retry: isNaN(maxDownloadAttempts) || maxDownloadAttempts < 0 ? null : {
-        max_download_attempts: maxDownloadAttempts,
+        per_asset: maxDownloadAttempts,
       },
     },
+    metadata: {
+      set_exif_datetime: setExif || null,
+    },
     filters: {
-      skip_videos: skipVideos || null,
-      skip_photos: skipPhotos || null,
       libraries: libraries,
       albums: albums,
       exclude_albums: null,
       smart_folders: smartFolders,
       unfiled: unfiled === true ? null : false,
+      media: mediaFilterFromSelection({ photos: !skipPhotos, videos: !skipVideos }),
       recent: isNaN(recent) || recent <= 0 ? null : recent,
     },
     watch: {

@@ -52,7 +52,7 @@ npm run dev
 
 The first build takes a few minutes (Tauri compiles the WebView bindings). Subsequent runs are fast.
 
-`prepare-sidecar` is a no-op if the binary is already present. The downloaded version is pinned in `src-tauri/binaries/.kei-version` so cross-platform builds always use the same release.
+`prepare-sidecar` is a no-op if the binary is already present and newer than the pin file. The downloaded version is pinned in `src-tauri/binaries/.kei-version` so cross-platform builds always use the same release.
 
 To update the bundled kei to the latest release:
 
@@ -171,21 +171,23 @@ domain   = "com"          # or "cn" for China
 
 [download]
 directory                      = "~/Photos/iCloud"
-threads_num                    = 10
+threads                        = 10
 folder_structure               = "%Y/%m/%d"       # unfiled photos
 folder_structure_albums        = "{album}/%Y/%m"  # user albums
 folder_structure_smart_folders = "{smart-folder}" # Apple smart folders
-set_exif_datetime = false
 
 [download.retry]
-max_download_attempts = 10
+per_asset = 10
+
+[metadata]
+set_exif_datetime = false
 
 [filters]
-skip_videos    = false
 libraries      = ["primary"]
 albums         = ["Vacation", "!Screenshots"]
 smart_folders  = ["Favorites"]
 unfiled        = true
+media          = ["photos", "videos", "live-photos"]
 recent         = 0              # 0 = all
 
 [watch]
