@@ -2,7 +2,7 @@
 
 Cloud Photo Downloader for macOS, Windows, and Linux.
 
-Download your iCloud Photos to your own computer. PhotoHarbor copies photos and videos from iCloud Photos to a local folder, with support for albums, Apple smart folders, Live Photos, browsing downloaded files, and sync history. Based on the [kei](https://github.com/rhoopr/kei) sync engine.
+Download your iCloud Photos to your own computer. PhotoHarbor copies photos and videos from iCloud Photos to a local folder, with support for albums, iCloud Shared Photo Library albums, Apple smart folders, Live Photos, browsing downloaded files, and sync history. Based on the [kei](https://github.com/rhoopr/kei) sync engine.
 
 ## Supported platforms
 
@@ -126,7 +126,7 @@ PhotoHarbor/
 | **Sync** | Start/Stop button, kei friendly progress UI, expandable compact/full logs, recent thumbnail strip, and automatic password/2FA prompts |
 | **Browse** | Folder browser rooted at the configured download directory, with cached thumbnails, video previews, Live Photo pairing, breadcrumbs, and Finder/File Explorer open actions |
 | **History** | Table of the last 100 sync runs with duration and status, plus clear-history/statistics action |
-| **Settings** | Form that reads and writes the kei config file, including selectable albums and Apple smart folders |
+| **Settings** | Form that reads and writes the kei config file, including selectable primary albums, shared-library albums, and Apple smart folders |
 
 ## Backend commands
 
@@ -149,6 +149,7 @@ All backend logic lives in [src-tauri/src/main.rs](src-tauri/src/main.rs).
 | `submit_2fa` | Runs `kei login submit-code <CODE>` as a separate process |
 | `clear_kei_session` | Deletes kei session/cookie files to force re-authentication |
 | `list_kei_albums` | Runs `kei list albums` and returns the album names |
+| `list_kei_shared_albums` | Runs `kei list --library shared albums` and returns shared-library album names |
 | `list_kei_smart_folders` | Runs kei and returns available Apple smart folders |
 | `browse_photos` | Lists one folder level from the configured download root, returning child folders and direct media assets |
 | `get_recent_downloads` | Returns up to 100 recently downloaded media assets with cached thumbnails and Live Photo pairing |

@@ -1594,10 +1594,16 @@ document.getElementById("history-clear-btn").addEventListener("click", async () 
 
 const albumsList = document.getElementById("cfg-albums-list");
 const albumsTextInput = document.getElementById("cfg-albums");
+const sharedAlbumsRow = document.getElementById("cfg-shared-albums-row");
+const sharedAlbumsList = document.getElementById("cfg-shared-albums-list");
+const sharedAlbumsTextInput = document.getElementById("cfg-shared-albums");
 const excludeAlbumsList = document.getElementById("cfg-exclude-albums-list");
 const excludeAlbumsTextInput = document.getElementById("cfg-exclude-albums");
 const smartFoldersList = document.getElementById("cfg-smart-folders-list");
 const smartFoldersTextInput = document.getElementById("cfg-smart-folders");
+const sharedLibraryPseudoInput = document.getElementById("cfg-shared-library-pseudo");
+const sharedLibraryWarning = document.getElementById("cfg-shared-library-warning");
+const SHARED_LIBRARY_PSEUDO_ALBUM = "__photoharbor_shared_libraries__";
 
 function _readChecklist(listEl, textEl) {
   if (!listEl.classList.contains("hidden")) {
@@ -1608,7 +1614,12 @@ function _readChecklist(listEl, textEl) {
 }
 
 function getSelectedAlbums() {
-  return _readChecklist(albumsList, albumsTextInput);
+  return _readChecklist(albumsList, albumsTextInput)
+    .filter((album) => album !== SHARED_LIBRARY_PSEUDO_ALBUM);
+}
+
+function getSelectedSharedAlbums() {
+  return _readChecklist(sharedAlbumsList, sharedAlbumsTextInput);
 }
 
 function getExcludeAlbums() {
@@ -1617,6 +1628,99 @@ function getExcludeAlbums() {
 
 function getSelectedSmartFolders() {
   return _readChecklist(smartFoldersList, smartFoldersTextInput);
+}
+
+function librarySelectorsIncludeShared(libraries = []) {
+  return libraries.some((selector) => {
+    const value = String(selector || "").trim().toLowerCase();
+    if (!value || value.startsWith("!")) return false;
+    return value === "shared" || value === "all" || value.startsWith("sharedsync-");
+  });
+}
+
+function librarySelectorsIncludePrimary(libraries = []) {
+  const values = libraries.map((selector) => String(selector || "").trim().toLowerCase()).filter(Boolean);
+  if (values.length === 0) return true;
+  return values.some((value) => !value.startsWith("!") && (value === "primary" || value === "all"));
+}
+
+function librarySelectorsAreSharedOnly(libraries = []) {
+  let hasSharedSelector = false;
+  const hasOnlySharedSelectors = libraries.every((selector) => {
+    const value = String(selector || "").trim().toLowerCase();
+    if (!value || value.startsWith("!")) return true;
+    const isShared = value === "shared" || value.startsWith("sharedsync-");
+    if (isShared) hasSharedSelector = true;
+    return isShared;
+  });
+  return hasSharedSelector && hasOnlySharedSelectors;
+}
+
+function customLibrarySelectorsForUi(libraries = []) {
+  const values = libraries.map((selector) => String(selector || "").trim()).filter(Boolean);
+  if (values.length === 0) return [];
+  const lower = values.map((selector) => selector.toLowerCase()).sort();
+  const managed =
+    (lower.length === 1 && ["primary", "shared", "all"].includes(lower[0])) ||
+    (lower.length === 2 && lower[0] === "primary" && lower[1] === "shared");
+  return managed ? [] : values;
+}
+
+function folderTemplatesUseLibraryToken(...templates) {
+  return templates.some((template) => String(template || "").includes("{library}"));
+}
+
+function currentFolderTemplateValues() {
+  const folderSelectVal = document.getElementById("cfg-folder-structure-select").value;
+  const folderStructureBase = folderSelectVal === "__custom__"
+    ? document.getElementById("cfg-folder-structure").value.trim()
+    : folderSelectVal;
+  const albumFolderSelectVal = document.getElementById("cfg-album-folder-structure-select").value;
+  const albumFolderStructure = albumFolderSelectVal === "__custom__"
+    ? document.getElementById("cfg-album-folder-structure").value.trim()
+    : albumFolderSelectVal;
+  const smartFolderSelectVal = document.getElementById("cfg-smart-folder-structure-select").value;
+  const smartFolderStructure = smartFolderSelectVal === "__custom__"
+    ? document.getElementById("cfg-smart-folder-structure").value.trim()
+    : smartFolderSelectVal;
+  return [folderStructureBase, albumFolderStructure, smartFolderStructure];
+}
+
+function updateSharedLibraryWarning() {
+  if (!sharedLibraryWarning) return;
+  const customLibraries = parseAlbums(document.getElementById("cfg-libraries").value) ?? [];
+  const sharedAlbumsSelected = !sharedAlbumsRow.classList.contains("hidden") && getSelectedSharedAlbums().length > 0;
+  const sharedSelected =
+    sharedLibraryPseudoInput.checked ||
+    sharedAlbumsSelected ||
+    librarySelectorsIncludeShared(customLibraries);
+  const hasLibraryTemplate = folderTemplatesUseLibraryToken(...currentFolderTemplateValues());
+  sharedLibraryWarning.classList.toggle("hidden", !sharedSelected || hasLibraryTemplate);
+}
+
+function updateAlbumSelectionRows(loadPickers = false) {
+  const albumsAll = document.getElementById("cfg-albums-all").checked;
+  const sharedLibraryPhotos = sharedLibraryPseudoInput.checked;
+  document.getElementById("cfg-albums-row").classList.toggle("hidden", albumsAll);
+  document.getElementById("cfg-exclude-albums-row").classList.toggle("hidden", !albumsAll);
+  sharedAlbumsRow.classList.toggle("hidden", albumsAll || sharedLibraryPhotos);
+  if (loadPickers && !albumsAll) loadAlbumPicker(getSelectedAlbums());
+  if (loadPickers && !albumsAll && !sharedLibraryPhotos) loadSharedAlbumPicker(getSelectedSharedAlbums());
+  updateSharedLibraryWarning();
+}
+
+function uniqueAlbumNames(...groups) {
+  const seen = new Set();
+  const names = [];
+  for (const group of groups) {
+    for (const album of group) {
+      const key = album.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      names.push(album);
+    }
+  }
+  return names;
 }
 
 function _renderChecklist(listEl, textEl, albums, selected) {
@@ -1640,6 +1744,8 @@ function _renderChecklist(listEl, textEl, albums, selected) {
 // Cache: null = not yet fetched, [] = fetch failed, [...] = album names.
 let _albumCache = null;
 let _albumCachePromise = null;
+let _sharedAlbumCache = null;
+let _sharedAlbumCachePromise = null;
 let _smartFolderCache = null;
 let _smartFolderCachePromise = null;
 
@@ -1652,6 +1758,17 @@ async function _fetchAlbums(bust) {
       .catch(() => { _albumCache = []; _albumCachePromise = null; return null; });
   }
   return _albumCachePromise;
+}
+
+async function _fetchSharedAlbums(bust) {
+  if (bust) { _sharedAlbumCache = null; _sharedAlbumCachePromise = null; }
+  if (_sharedAlbumCache !== null) return _sharedAlbumCache;
+  if (!_sharedAlbumCachePromise) {
+    _sharedAlbumCachePromise = invoke("list_kei_shared_albums")
+      .then((list) => { _sharedAlbumCache = list; return list; })
+      .catch(() => { _sharedAlbumCache = []; _sharedAlbumCachePromise = null; return null; });
+  }
+  return _sharedAlbumCachePromise;
 }
 
 async function _fetchSmartFolders(bust) {
@@ -1681,6 +1798,10 @@ function loadAlbumPicker(selected, bust) {
   return _loadPicker(albumsList, albumsTextInput, selected, bust, _fetchAlbums);
 }
 
+function loadSharedAlbumPicker(selected, bust) {
+  return _loadPicker(sharedAlbumsList, sharedAlbumsTextInput, selected, bust, _fetchSharedAlbums);
+}
+
 function loadExcludeAlbumPicker(selected, bust) {
   return _loadPicker(excludeAlbumsList, excludeAlbumsTextInput, selected, bust, _fetchAlbums);
 }
@@ -1692,6 +1813,10 @@ function loadSmartFolderPicker(selected, bust) {
 document.getElementById("cfg-albums-refresh").addEventListener("click", () => {
   loadAlbumPicker(getSelectedAlbums(), true);
   loadExcludeAlbumPicker(getExcludeAlbums(), true);
+});
+
+document.getElementById("cfg-shared-albums-refresh").addEventListener("click", () => {
+  loadSharedAlbumPicker(getSelectedSharedAlbums(), true);
 });
 
 document.getElementById("cfg-exclude-albums-refresh").addEventListener("click", () => {
@@ -1737,7 +1862,8 @@ async function loadSettings() {
 
     document.getElementById("cfg-username").value = cfg.auth?.username ?? "";
     document.getElementById("cfg-domain").value = cfg.auth?.domain ?? "com";
-    document.getElementById("cfg-libraries").value = (cfg.filters?.libraries ?? []).join(", ");
+    const librarySelectors = cfg.filters?.libraries ?? [];
+    document.getElementById("cfg-libraries").value = customLibrarySelectorsForUi(librarySelectors).join(", ");
     document.getElementById("cfg-directory").value = cfg.download?.directory ?? "";
     document.getElementById("cfg-threads").value = cfg.download?.threads ?? "";
     // Folder structure for the unfiled pass; AppSettings is a legacy fallback.
@@ -1793,14 +1919,19 @@ async function loadSettings() {
     const tomlHasAll = albumFilters.some((a) => a.toLowerCase() === "all");
     const tomlHasExclusionOnlySelection = includedAlbums.length === 0 && excludedAlbums.length > 0;
     const albumsAll = (appSettings.all_albums ?? false) || tomlHasAll || tomlHasExclusionOnlySelection;
-    const albums = albumsAll ? [] : includedAlbums;
+    const primaryAlbums = albumsAll || !librarySelectorsIncludePrimary(librarySelectors) ? [] : includedAlbums;
+    const sharedAlbums = albumsAll || !librarySelectorsIncludeShared(librarySelectors) ? [] : includedAlbums;
+    const unfiledSelected = librarySelectorsAreSharedOnly(librarySelectors)
+      ? false
+      : (cfg.filters?.unfiled ?? true);
+    sharedLibraryPseudoInput.checked = librarySelectorsIncludeShared(librarySelectors) && (cfg.filters?.unfiled ?? true);
     document.getElementById("cfg-albums-all").checked = albumsAll;
-    document.getElementById("cfg-albums-row").classList.toggle("hidden", albumsAll);
-    document.getElementById("cfg-exclude-albums-row").classList.toggle("hidden", !albumsAll);
-    if (!albumsAll) loadAlbumPicker(albums);
+    updateAlbumSelectionRows();
+    if (!albumsAll) loadAlbumPicker(primaryAlbums);
+    if (!albumsAll && !sharedLibraryPseudoInput.checked) loadSharedAlbumPicker(sharedAlbums);
 
     loadExcludeAlbumPicker(excludedAlbums);
-    document.getElementById("cfg-unfiled").checked = cfg.filters?.unfiled ?? true;
+    document.getElementById("cfg-unfiled").checked = unfiledSelected;
     loadSmartFolderPicker(cfg.filters?.smart_folders ?? []);
     document.getElementById("cfg-recent").value = cfg.filters?.recent ?? "";
     document.getElementById("cfg-watch-interval").value = cfg.watch?.interval ?? "";
@@ -1811,6 +1942,7 @@ async function loadSettings() {
     document.getElementById("cfg-use-system-kei").checked = useSystem;
     document.getElementById("cfg-extra-args").value = appSettings.extra_args ?? "";
     document.getElementById("system-kei-warning").classList.toggle("hidden", !useSystem);
+    updateSharedLibraryWarning();
   } catch (err) {
     console.error("get_config error:", err);
   }
@@ -1840,22 +1972,31 @@ function parseAlbums(val) {
   return list.length > 0 ? list : null;
 }
 
-document.getElementById("cfg-albums-all").addEventListener("change", (e) => {
-  document.getElementById("cfg-albums-row").classList.toggle("hidden", e.target.checked);
-  document.getElementById("cfg-exclude-albums-row").classList.toggle("hidden", !e.target.checked);
-});
+document.getElementById("cfg-albums-all").addEventListener("change", () => updateAlbumSelectionRows(true));
+
+sharedLibraryPseudoInput.addEventListener("change", () => updateAlbumSelectionRows(true));
+sharedAlbumsList.addEventListener("change", updateSharedLibraryWarning);
+sharedAlbumsTextInput.addEventListener("input", updateSharedLibraryWarning);
+document.getElementById("cfg-libraries").addEventListener("input", updateSharedLibraryWarning);
 
 document.getElementById("cfg-folder-structure-select").addEventListener("change", (e) => {
   document.getElementById("cfg-folder-structure-custom-row").classList.toggle("hidden", e.target.value !== "__custom__");
+  updateSharedLibraryWarning();
 });
 
 document.getElementById("cfg-album-folder-structure-select").addEventListener("change", (e) => {
   document.getElementById("cfg-album-folder-structure-custom-row").classList.toggle("hidden", e.target.value !== "__custom__");
+  updateSharedLibraryWarning();
 });
 
 document.getElementById("cfg-smart-folder-structure-select").addEventListener("change", (e) => {
   document.getElementById("cfg-smart-folder-structure-custom-row").classList.toggle("hidden", e.target.value !== "__custom__");
+  updateSharedLibraryWarning();
 });
+
+document.getElementById("cfg-folder-structure").addEventListener("input", updateSharedLibraryWarning);
+document.getElementById("cfg-album-folder-structure").addEventListener("input", updateSharedLibraryWarning);
+document.getElementById("cfg-smart-folder-structure").addEventListener("input", updateSharedLibraryWarning);
 
 document.getElementById("cfg-use-system-kei").addEventListener("change", (e) => {
   document.getElementById("system-kei-warning").classList.toggle("hidden", !e.target.checked);
@@ -1922,18 +2063,29 @@ function validateWizardStep() {
   return "";
 }
 
+function updateWizardSharedLibraryWarning() {
+  const warning = document.getElementById("wizard-shared-library-warning");
+  const shared = document.getElementById("wizard-shared-libraries").checked;
+  const folderStructure = document.getElementById("wizard-folder-structure").value;
+  warning.classList.toggle("hidden", !shared || folderStructure.includes("{library}"));
+}
+
 function showSetupWizard(cfg = {}) {
   document.getElementById("wizard-username").value = cfg.auth?.username ?? "";
   document.getElementById("wizard-domain").value = cfg.auth?.domain ?? "com";
   document.getElementById("wizard-directory").value = cfg.download?.directory ?? "";
   document.getElementById("wizard-folder-structure").value = cfg.download?.folder_structure ?? "%Y/%m";
-  document.getElementById("wizard-unfiled").checked = cfg.filters?.unfiled ?? true;
+  document.getElementById("wizard-shared-libraries").checked = librarySelectorsIncludeShared(cfg.filters?.libraries ?? []);
+  document.getElementById("wizard-unfiled").checked = librarySelectorsAreSharedOnly(cfg.filters?.libraries ?? [])
+    ? false
+    : (cfg.filters?.unfiled ?? true);
   const mediaSelection = mediaSelectionFromConfig(cfg);
   document.getElementById("wizard-photos").checked = mediaSelection.photos;
   document.getElementById("wizard-videos").checked = mediaSelection.videos;
   const albumFilters = cfg.filters?.albums ?? [];
   const hasSpecificAlbums = albumFilters.some((album) => !album.startsWith("!") && album.toLowerCase() !== "all");
   document.getElementById("wizard-all-albums").checked = !hasSpecificAlbums;
+  updateWizardSharedLibraryWarning();
   setWizardStep(0);
   setupWizardOverlay.classList.remove("hidden");
   setTimeout(() => document.getElementById("wizard-username").focus(), 100);
@@ -1956,9 +2108,11 @@ async function saveWizardSettings() {
   const directory = document.getElementById("wizard-directory").value.trim();
   const folderStructure = document.getElementById("wizard-folder-structure").value;
   const allAlbums = document.getElementById("wizard-all-albums").checked;
+  const sharedLibraries = document.getElementById("wizard-shared-libraries").checked;
   const unfiled = document.getElementById("wizard-unfiled").checked;
   const photos = document.getElementById("wizard-photos").checked;
   const videos = document.getElementById("wizard-videos").checked;
+  const primaryContentSelected = allAlbums || unfiled;
 
   const config = {
     log_level: null,
@@ -1976,11 +2130,13 @@ async function saveWizardSettings() {
     },
     metadata: null,
     filters: {
-      libraries: null,
+      libraries: sharedLibraries
+        ? (primaryContentSelected ? ["all"] : ["shared"])
+        : ["primary"],
       albums: allAlbums ? ["all"] : null,
       exclude_albums: null,
       smart_folders: null,
-      unfiled: unfiled ? null : false,
+      unfiled: (unfiled || sharedLibraries) ? null : false,
       media: mediaFilterFromSelection({ photos, videos }),
       recent: null,
     },
@@ -2033,6 +2189,8 @@ document.getElementById("wizard-directory-pick").addEventListener("click", async
   const dir = await openDialog({ directory: true, multiple: false, title: "Select Download Directory" });
   if (dir) document.getElementById("wizard-directory").value = dir;
 });
+document.getElementById("wizard-shared-libraries").addEventListener("change", updateWizardSharedLibraryWarning);
+document.getElementById("wizard-folder-structure").addEventListener("change", updateWizardSharedLibraryWarning);
 
 // ---------------------------------------------------------------------------
 // About Modal
@@ -2064,7 +2222,7 @@ document.querySelectorAll("#modal-about [data-url]").forEach((a) => {
 async function saveSettings() {
   const username = document.getElementById("cfg-username").value.trim();
   const domain = document.getElementById("cfg-domain").value;
-  const libraries = parseAlbums(document.getElementById("cfg-libraries").value) ?? null;
+  const customLibraries = parseAlbums(document.getElementById("cfg-libraries").value);
   const directory = document.getElementById("cfg-directory").value.trim();
   const threads = parseInt(document.getElementById("cfg-threads").value, 10);
   const folderSelectVal = document.getElementById("cfg-folder-structure-select").value;
@@ -2088,14 +2246,30 @@ async function saveSettings() {
     return;
   }
   const albumsAll = document.getElementById("cfg-albums-all").checked;
+  const sharedLibraryPhotos = sharedLibraryPseudoInput.checked;
+  const selectedPrimaryAlbums = getSelectedAlbums();
+  const selectedSharedAlbums = albumsAll || sharedLibraryPhotos ? [] : getSelectedSharedAlbums();
+  const selectedNamedAlbums = uniqueAlbumNames(selectedPrimaryAlbums, selectedSharedAlbums);
   // kei stores exclusions inline: albums = ["!Screenshots"] means all albums except Screenshots.
   const excludeAlbums = getExcludeAlbums().length > 0 ? getExcludeAlbums() : null;
   const albums = albumsAll
     ? (excludeAlbums ? excludeAlbums.map((album) => `!${album}`) : ["all"])
-    : (getSelectedAlbums().length > 0 ? getSelectedAlbums() : null);
+    : (selectedNamedAlbums.length > 0 ? selectedNamedAlbums : null);
   const selectedSmartFolders = getSelectedSmartFolders();
   const smartFolders = selectedSmartFolders.length > 0 ? selectedSmartFolders : null;
   const unfiled = document.getElementById("cfg-unfiled").checked;
+  const sharedAlbumContentSelected = selectedSharedAlbums.length > 0;
+  const sharedContentSelected = sharedLibraryPhotos || sharedAlbumContentSelected;
+  const primaryContentSelected =
+    albumsAll ||
+    selectedPrimaryAlbums.length > 0 ||
+    unfiled ||
+    (smartFolders?.length ?? 0) > 0;
+  const libraries = customLibraries ?? (
+    sharedContentSelected
+      ? (primaryContentSelected ? ["all"] : ["shared"])
+      : ["primary"]
+  );
   const recent = parseInt(document.getElementById("cfg-recent").value, 10);
   const maxDownloadAttempts = parseInt(document.getElementById("cfg-max-download-attempts").value, 10);
   const watchInterval = parseInt(document.getElementById("cfg-watch-interval").value, 10);
@@ -2127,7 +2301,7 @@ async function saveSettings() {
       albums: albums,
       exclude_albums: null,
       smart_folders: smartFolders,
-      unfiled: unfiled === true ? null : false,
+      unfiled: (unfiled || sharedLibraryPhotos) ? null : false,
       media: mediaFilterFromSelection({ photos: !skipPhotos, videos: !skipVideos }),
       recent: isNaN(recent) || recent <= 0 ? null : recent,
     },

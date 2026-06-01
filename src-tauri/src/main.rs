@@ -699,13 +699,14 @@ fn is_lock_error(line: &str) -> bool {
         || line.contains("Another kei instance is running")
 }
 
-/// Run `kei list albums` and return the album names.
-/// Returns an error if kei is not authenticated or the command fails.
-#[tauri::command]
-async fn list_kei_albums() -> Result<Vec<String>, String> {
+async fn list_kei_albums_for_library(library: Option<&str>) -> Result<Vec<String>, String> {
     let kei_bin = resolve_kei_bin().await?;
     let mut cmd = Command::new(&kei_bin);
-    cmd.args(["list", "albums"]);
+    cmd.arg("list");
+    if let Some(library) = library {
+        cmd.args(["--library", library]);
+    }
+    cmd.arg("albums");
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000);
     let output = cmd
@@ -730,6 +731,21 @@ async fn list_kei_albums() -> Result<Vec<String>, String> {
     } else {
         Ok(albums)
     }
+}
+
+/// Run `kei list albums` and return the primary-library album names.
+/// Returns an error if kei is not authenticated or the command fails.
+#[tauri::command]
+async fn list_kei_albums() -> Result<Vec<String>, String> {
+    list_kei_albums_for_library(None).await
+}
+
+/// Run `kei list --library shared albums` and return shared-library album names.
+/// This lists albums inside iCloud Shared Photo Libraries, not Apple's separate
+/// iCloud Shared Albums feature.
+#[tauri::command]
+async fn list_kei_shared_albums() -> Result<Vec<String>, String> {
+    list_kei_albums_for_library(Some("shared")).await
 }
 
 const FALLBACK_SMART_FOLDERS: [&str; 10] = [
@@ -2101,6 +2117,7 @@ fn main() {
             submit_2fa,
             clear_kei_session,
             list_kei_albums,
+            list_kei_shared_albums,
             list_kei_smart_folders,
             get_recent_downloads,
             browse_photos,

@@ -1456,6 +1456,28 @@ html, body {
   white-space: nowrap;
 }
 
+.album-check-row--pseudo {
+  align-items: flex-start;
+  max-width: 360px;
+  padding: 6px 8px;
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-sm);
+  background: var(--input-bg);
+  white-space: normal;
+}
+
+.album-check-row--pseudo span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.album-check-row--pseudo small {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .album-check-row input[type=checkbox] {
   width: auto;
   margin: 0;
@@ -1719,6 +1741,11 @@ html, body {
   font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.5;
+}
+
+.wizard-hint--warn {
+  color: var(--warning);
+  margin: 4px 0 8px;
 }
 
 .wizard-steps {

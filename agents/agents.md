@@ -4,7 +4,7 @@ This document gives an AI agent the context needed to work in this repo confiden
 
 ## What this project is
 
-PhotoHarbor is a Cloud Photo Downloader for macOS, Windows, and Linux. It downloads iCloud Photos to a local folder, including albums, Apple smart folders, Live Photos, browsing downloaded files, and sync history.
+PhotoHarbor is a Cloud Photo Downloader for macOS, Windows, and Linux. It downloads iCloud Photos to a local folder, including albums, iCloud Shared Photo Library albums, Apple smart folders, Live Photos, browsing downloaded files, and sync history.
 
 Under the hood, it is a Tauri v2 cross-platform desktop GUI that wraps the [kei](https://github.com/rhoopr/kei) iCloud photo sync CLI. The GUI does not contain any sync logic — it spawns the kei binary, streams its output, and reads/writes its config and SQLite database.
 
@@ -63,6 +63,7 @@ request_2fa_code(app)          -> ()               // runs kei login get-code
 submit_2fa(app, code)          -> ()               // runs kei login submit-code <CODE>
 clear_kei_session()            -> ()               // deletes session/cookie files
 list_kei_albums()              -> Vec<String>      // runs kei list albums
+list_kei_shared_albums()       -> Vec<String>      // runs kei list --library shared albums
 list_kei_smart_folders()       -> Vec<String>      // runs kei and returns Apple smart folder names
 get_recent_downloads()         -> Vec<RecentAsset> // 100 newest media assets, cached thumbs, Live Photo pairing
 browse_photos()                -> BrowsePhotosResult // direct child folders + direct media for one folder

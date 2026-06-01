@@ -321,10 +321,30 @@
               <input type="checkbox" id="cfg-albums-all" />
               <span class="form-hint">Sync every user-created album. Apple smart folders (Favorites, Screenshots, etc.) are skipped unless named explicitly below.</span>
             </div>
+            <div class="form-row form-row--top">
+              <label for="cfg-shared-library-pseudo">Shared Library Photos</label>
+              <label class="album-check-row album-check-row--pseudo">
+                <input type="checkbox" id="cfg-shared-library-pseudo" value="__photoharbor_shared_libraries__" />
+                <span>
+                  <strong>Shared Library Photos</strong>
+                  <small>All photos and videos from iCloud Shared Photo Libraries</small>
+                </span>
+              </label>
+            </div>
+            <div id="cfg-shared-library-warning" class="notice notice--warn hidden">
+              <strong>Shared library folder warning.</strong>
+              Add <code>{library}</code> to a folder structure if you want primary and shared library files kept in separate folders.
+            </div>
             <div class="form-row form-row--top" id="cfg-albums-row">
               <label>Sync Albums <button type="button" class="btn-ghost btn-inline" id="cfg-albums-refresh" title="Refresh album list">↻</button></label>
               <div id="cfg-albums-list" class="albums-checklist hidden"></div>
               <input type="text" id="cfg-albums" placeholder="Vacation, Family (comma-separated)" />
+            </div>
+            <div class="form-row form-row--top" id="cfg-shared-albums-row">
+              <label>Shared Library Albums <button type="button" class="btn-ghost btn-inline" id="cfg-shared-albums-refresh" title="Refresh shared album list">↻</button></label>
+              <div id="cfg-shared-albums-list" class="albums-checklist hidden"></div>
+              <input type="text" id="cfg-shared-albums" placeholder="Shared vacation, Family (comma-separated)" />
+              <span class="form-hint">Albums inside iCloud Shared Photo Libraries.</span>
             </div>
             <div class="form-row form-row--top" id="cfg-exclude-albums-row">
               <label>Exclude Albums <button type="button" class="btn-ghost btn-inline" id="cfg-exclude-albums-refresh" title="Refresh album list">↻</button></label>
@@ -371,8 +391,9 @@
                 </select>
               </div>
               <div class="form-row">
-                <label for="cfg-libraries">Libraries</label>
+                <label for="cfg-libraries">Custom Library Selectors</label>
                 <input type="text" id="cfg-libraries" placeholder="primary, shared, SharedSync-AB12CD34" />
+                <span class="form-hint">Advanced override. Leave blank to use the Shared Library Photos checkbox.</span>
               </div>
             </div>
 
@@ -523,6 +544,11 @@
           <input type="checkbox" id="wizard-all-albums" checked />
           <span>Sync all albums</span>
         </label>
+        <label class="wizard-check">
+          <input type="checkbox" id="wizard-shared-libraries" />
+          <span>Include Shared Library Photos</span>
+        </label>
+        <p id="wizard-shared-library-warning" class="wizard-hint wizard-hint--warn hidden">Shared Library Photos may share folders with primary photos. You can add <code>{library}</code> to folder structures later in Settings.</p>
         <label class="wizard-check">
           <input type="checkbox" id="wizard-unfiled" checked />
           <span>Include photos that are not in an album</span>
