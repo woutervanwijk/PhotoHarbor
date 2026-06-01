@@ -1284,10 +1284,15 @@ async fn clear_kei_session() -> Result<(), String> {
 #[derive(Debug, Serialize)]
 pub struct RecentAsset {
     pub path: String,
+    pub file_name: String,
     pub is_video: bool,
     pub is_live_photo: bool,
     pub live_video_path: Option<String>,
     pub thumbnail_path: Option<String>,
+    pub size_bytes: u64,
+    pub live_video_size_bytes: Option<u64>,
+    pub captured_at: Option<u64>,
+    pub downloaded_at: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1313,6 +1318,7 @@ struct MediaFile {
     path: std::path::PathBuf,
     is_video: bool,
     len: u64,
+    modified: Option<std::time::SystemTime>,
 }
 
 fn expand_tilde(path: &str) -> String {
@@ -1365,10 +1371,20 @@ fn media_file_from_path(path: std::path::PathBuf, meta: std::fs::Metadata) -> Op
             path,
             is_video,
             len: meta.len(),
+            modified: meta.modified().ok(),
         })
     } else {
         None
     }
+}
+
+fn system_time_secs(time: Option<std::time::SystemTime>) -> Option<u64> {
+    time.and_then(|value| {
+        value
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .ok()
+    })
 }
 
 fn collect_media_files(root: &std::path::Path) -> Vec<MediaFile> {
@@ -1511,12 +1527,24 @@ fn recent_asset_from_pair(
         cached_thumbnail_path(&file.path, file.is_video, file.ts, file.len)
     }
     .map(|path| path.to_string_lossy().to_string());
+    let live_video_size_bytes = live_video.as_ref().map(|video| video.len);
+    let file_name = file
+        .path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_string();
     RecentAsset {
         path: file.path.to_string_lossy().to_string(),
+        file_name,
         is_video: file.is_video,
         is_live_photo: live_video.is_some(),
         live_video_path: live_video.map(|video| video.path.to_string_lossy().to_string()),
         thumbnail_path,
+        size_bytes: file.len,
+        live_video_size_bytes,
+        captured_at: system_time_secs(file.modified),
+        downloaded_at: system_time_secs(Some(file.ts)),
     }
 }
 

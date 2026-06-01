@@ -74,6 +74,39 @@ function fmtNum(n) {
   return n === null || n === undefined ? "—" : n.toLocaleString();
 }
 
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 0) return "—";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const decimals = unit === 0 || value >= 100 ? 0 : 1;
+  return `${value.toFixed(decimals)} ${units[unit]}`;
+}
+
+function formatMediaDate(unixSecs) {
+  if (!unixSecs) return "—";
+  return new Date(unixSecs * 1000).toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function containingFolder(path) {
+  if (!path) return "";
+  const normalized = path.replaceAll("\\", "/");
+  const index = normalized.lastIndexOf("/");
+  if (index <= 0) return "";
+  return normalized.slice(0, index);
+}
+
 function cleanKeiLine(raw) {
   return stripAnsi(String(raw))
     .replace(/^\[err\]\s*/, "")
@@ -191,9 +224,49 @@ const _lightboxOverlay = document.getElementById("lightbox-overlay");
 const _lightboxImg = document.getElementById("lightbox-img");
 const _lightboxVideo = document.getElementById("lightbox-video");
 const _lightboxLiveBadge = document.getElementById("lightbox-live-badge");
+const _lightboxMetadata = document.getElementById("lightbox-metadata");
 const _lightboxMedia = document.querySelector(".lightbox-media");
 let _lightboxAssets = [];
 let _lightboxIndex = -1;
+
+function renderLightboxMetadata(asset) {
+  if (!_lightboxMetadata || !asset) return;
+  const dimensions = asset.dimensions || "—";
+  const sizeBytes = (asset.sizeBytes || 0) + (asset.liveVideoSizeBytes || 0);
+  const rows = [
+    ["Date", formatMediaDate(asset.capturedAt || asset.downloadedAt)],
+    ["Type", asset.kind],
+    ["Dimensions", dimensions],
+    ["Size", formatBytes(sizeBytes)],
+    ["Downloaded", formatMediaDate(asset.downloadedAt)],
+    ["Folder", containingFolder(asset.path)],
+  ].filter(([, value]) => value && value !== "—");
+
+  _lightboxMetadata.replaceChildren();
+  const title = document.createElement("div");
+  title.className = "lightbox-metadata-title";
+  title.textContent = asset.fileName || "Untitled";
+  _lightboxMetadata.appendChild(title);
+
+  for (const [label, value] of rows) {
+    const row = document.createElement("div");
+    row.className = "lightbox-metadata-row";
+    const labelEl = document.createElement("span");
+    labelEl.textContent = label;
+    const valueEl = document.createElement("strong");
+    valueEl.textContent = value;
+    row.append(labelEl, valueEl);
+    _lightboxMetadata.appendChild(row);
+  }
+}
+
+function setLightboxDimensions(asset, width, height) {
+  if (!asset || !width || !height) return;
+  const next = `${Math.round(width)} × ${Math.round(height)}`;
+  if (asset.dimensions === next) return;
+  asset.dimensions = next;
+  if (_lightboxAssets[_lightboxIndex] === asset) renderLightboxMetadata(asset);
+}
 
 function showLightboxAsset(asset) {
   _lightboxMedia.classList.remove("lightbox-media--live", "lightbox-media--previewing");
@@ -203,6 +276,7 @@ function showLightboxAsset(asset) {
   _lightboxVideo.muted = false;
   _lightboxVideo.loop = false;
   _lightboxLiveBadge.classList.add("hidden");
+  renderLightboxMetadata(asset);
 
   if (asset.isVideo) {
     _lightboxImg.classList.add("hidden");
@@ -242,6 +316,7 @@ function closeLightbox() {
   _lightboxImg.removeAttribute("src");
   _lightboxMedia.classList.remove("lightbox-media--live", "lightbox-media--previewing");
   _lightboxLiveBadge.classList.add("hidden");
+  _lightboxMetadata?.replaceChildren();
 }
 
 function playLightboxLivePhoto() {
@@ -294,6 +369,15 @@ _lightboxOverlay.addEventListener("click", (e) => { if (e.target === _lightboxOv
 _lightboxMedia.addEventListener("pointerenter", playLightboxLivePhoto);
 _lightboxMedia.addEventListener("pointermove", playLightboxLivePhoto);
 _lightboxMedia.addEventListener("pointerleave", pauseLightboxLivePhoto);
+_lightboxImg.addEventListener("load", () => {
+  setLightboxDimensions(_lightboxAssets[_lightboxIndex], _lightboxImg.naturalWidth, _lightboxImg.naturalHeight);
+});
+_lightboxVideo.addEventListener("loadedmetadata", () => {
+  const asset = _lightboxAssets[_lightboxIndex];
+  if (asset?.isVideo || !asset?.dimensions) {
+    setLightboxDimensions(asset, _lightboxVideo.videoWidth, _lightboxVideo.videoHeight);
+  }
+});
 _lightboxVideo.addEventListener("playing", () => {
   const asset = _lightboxAssets[_lightboxIndex];
   if (asset?.isLivePhoto) _lightboxMedia.classList.add("lightbox-media--previewing");
@@ -314,10 +398,17 @@ document.addEventListener("keydown", (e) => {
 function toLightboxAssets(assets) {
   return assets.map((asset) => ({
     path: asset.path,
+    fileName: asset.file_name || asset.path?.split(/[\\/]/).pop() || "",
     src: convertFileSrc(asset.path),
     isVideo: asset.is_video,
     isLivePhoto: asset.is_live_photo,
     liveVideoSrc: asset.live_video_path ? convertFileSrc(asset.live_video_path) : null,
+    sizeBytes: asset.size_bytes ?? 0,
+    liveVideoSizeBytes: asset.live_video_size_bytes ?? 0,
+    capturedAt: asset.captured_at ?? null,
+    downloadedAt: asset.downloaded_at ?? null,
+    dimensions: null,
+    kind: asset.is_live_photo ? "Live Photo" : (asset.is_video ? "Video" : "Photo"),
   }));
 }
 
